@@ -46,11 +46,12 @@ services:
     depends_on:
       - gateway
     environment:
-      - TE_GATEWAY_ADDR=gateway:4433
-      - TE_TOKEN=dev-token
-      - TE_LOCAL_ADDR=echo:6666
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
+    command:
+      - --gateway-addr=gateway:4433
+      - --token=dev-token
+      - --local-addr=echo:6666
     networks:
       - tunneledge
 
