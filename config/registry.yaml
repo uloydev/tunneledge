@@ -1,0 +1,8 @@
+log_level: debug
+log_format: console
+metrics_enabled: true
+metrics_addr: :9091
+
+grpc_listen_addr: :50051
+session_ttl: 5m
+cleanup_interval: 30s

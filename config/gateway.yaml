@@ -1,0 +1,11 @@
+log_level: debug
+log_format: console
+metrics_enabled: true
+metrics_addr: :9090
+
+quic_listen_addr: :4433
+public_listen_addr: :443
+base_domain: tunneledge.dev
+registry_addr: localhost:50051
+shutdown_timeout: 15s
+max_streams: 1000

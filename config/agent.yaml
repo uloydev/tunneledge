@@ -1,0 +1,12 @@
+log_level: debug
+log_format: console
+metrics_enabled: true
+metrics_addr: :9092
+
+gateway_addr: localhost:4433
+token: dev-token
+local_addr: localhost:3000
+reconnect_delay: 2s
+max_reconnect: 0
+heartbeat_interval: 15s
+quic_timeout: 30s
