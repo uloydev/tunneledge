@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package tunneledge.registry.v1;
+
+option go_package = "tunneledge/proto/registry/v1;registryv1";
+
+service RegistryService {
+  rpc RegisterTunnel(RegisterTunnelRequest) returns (RegisterTunnelResponse);
+  rpc DeregisterTunnel(DeregisterTunnelRequest) returns (DeregisterTunnelResponse);
+  rpc GetTunnel(GetTunnelRequest) returns (GetTunnelResponse);
+  rpc ListTunnels(ListTunnelsRequest) returns (ListTunnelsResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message RegisterTunnelRequest {
+  string tunnel_id = 1;
+  string agent_id = 2;
+  string token = 3;
+  string local_addr = 4;
+}
+
+message RegisterTunnelResponse {
+  string tunnel_id = 1;
+  string public_addr = 2;
+}
+
+message DeregisterTunnelRequest {
+  string tunnel_id = 1;
+}
+
+message DeregisterTunnelResponse {}
+
+message GetTunnelRequest {
+  string tunnel_id = 1;
+}
+
+message GetTunnelResponse {
+  string tunnel_id = 1;
+  string agent_id = 2;
+  string public_addr = 3;
+  string local_addr = 4;
+  int64  created_at = 5;
+  int64  last_heartbeat = 6;
+}
+
+message ListTunnelsRequest {}
+
+message ListTunnelsResponse {
+  repeated GetTunnelResponse tunnels = 1;
+}
+
+message HeartbeatRequest {
+  string tunnel_id = 1;
+}
+
+message HeartbeatResponse {
+  bool alive = 1;
+}
