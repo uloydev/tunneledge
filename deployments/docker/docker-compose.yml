@@ -1,0 +1,67 @@
+services:
+  registry:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.registry
+    ports:
+      - "50051:50051"
+    environment:
+      - TE_GRPC_LISTEN_ADDR=:50051
+      - TE_LOG_LEVEL=info
+      - TE_LOG_FORMAT=json
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tunneledge
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.gateway
+    ports:
+      - "4433:4433/udp"
+      - "443:443"
+    depends_on:
+      registry:
+        condition: service_healthy
+    environment:
+      - TE_QUIC_LISTEN_ADDR=:4433
+      - TE_PUBLIC_LISTEN_ADDR=:443
+      - TE_BASE_DOMAIN=tunneledge.dev
+      - TE_REGISTRY_ADDR=registry:50051
+      - TE_LOG_LEVEL=info
+      - TE_LOG_FORMAT=json
+      - TE_METRICS_ENABLED=true
+      - TE_METRICS_ADDR=:9090
+    networks:
+      - tunneledge
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.agent
+    depends_on:
+      - gateway
+    environment:
+      - TE_GATEWAY_ADDR=gateway:4433
+      - TE_TOKEN=dev-token
+      - TE_LOCAL_ADDR=echo:6666
+      - TE_LOG_LEVEL=info
+      - TE_LOG_FORMAT=json
+    networks:
+      - tunneledge
+
+  echo:
+    image: alpine/socat
+    command: TCP-LISTEN:6666,fork EXEC:"/bin/cat"
+    ports:
+      - "6666:6666"
+    networks:
+      - tunneledge
+
+networks:
+  tunneledge:
+    driver: bridge
