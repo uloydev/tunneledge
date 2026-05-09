@@ -1,4 +1,4 @@
-.PHONY: help build build-agent build-gateway build-registry run run-registry run-gateway run-agent \
+.PHONY: help build build-agent build-gateway build-registry build-http-echo run run-registry run-gateway run-agent \
        run-local test test-unit test-verbose vet lint tidy fmt proto \
        docker-up docker-down docker-build docker-logs \
        certs clean clean-bin all
@@ -16,7 +16,7 @@ help: ## Show this help
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
-build: build-agent build-gateway build-registry ## Build all binaries
+build: build-agent build-gateway build-registry build-http-echo ## Build all binaries
 
 build-agent: ## Build agent binary
 	@mkdir -p $(BINARY_DIR)
@@ -29,6 +29,10 @@ build-gateway: ## Build gateway binary
 build-registry: ## Build registry binary
 	@mkdir -p $(BINARY_DIR)
 	$(GO) build $(MAIN_FLAGS) -o $(BINARY_DIR)/registry ./cmd/registry
+
+build-http-echo: ## Build http-echo binary
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build $(MAIN_FLAGS) -o $(BINARY_DIR)/http-echo ./cmd/http-echo
 
 # ── Run (local dev) ──────────────────────────────────────────────────────────
 

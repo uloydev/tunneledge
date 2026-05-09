@@ -30,7 +30,8 @@ func main() {
 	log.Logger = logr.Logger
 
 	tokens := map[string]string{
-		"dev-token": "agent-1",
+		"dev-token":   "agent-1",
+		"dev-token-2": "agent-2",
 	}
 
 	var m *metrics.Metrics

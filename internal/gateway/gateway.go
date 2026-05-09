@@ -398,9 +398,9 @@ func (g *Gateway) getQUICTLSConfig() (*tls.Config, error) {
 
 func (g *Gateway) getPublicTLSConfig() (*tls.Config, error) {
 	if g.tlsCertFile != "" && g.tlsKeyFile != "" {
-		return transport.PublicTLSConfigWithSNI(g.tlsCertFile, g.tlsKeyFile, g.router.HasHostname)
+		return transport.PublicTLSConfigWithCertFiles(g.tlsCertFile, g.tlsKeyFile)
 	}
-	return transport.PublicTLSConfigWithSNISelfSigned(g.baseDomain, g.router.HasHostname)
+	return transport.PublicTLSConfigWithSNISelfSigned(g.baseDomain)
 }
 
 func (g *Gateway) ActiveTunnelCount() int {

@@ -55,6 +55,31 @@ services:
     networks:
       - tunneledge
 
+  agent-2:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.agent
+    depends_on:
+      - gateway
+    environment:
+      - TE_LOG_LEVEL=info
+      - TE_LOG_FORMAT=json
+    command:
+      - --gateway-addr=gateway:4433
+      - --token=dev-token-2
+      - --local-addr=http-echo:8080
+    networks:
+      - tunneledge
+
+  http-echo:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.http-echo
+    environment:
+      - TE_LISTEN_ADDR=:8080
+    networks:
+      - tunneledge
+
   echo:
     image: alpine/socat
     command: TCP-LISTEN:6666,fork EXEC:"/bin/cat"

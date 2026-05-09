@@ -53,7 +53,7 @@ func BidirectionalWithCallback(ctx context.Context, a, b io.ReadWriteCloser, onB
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		defer b.Close()
+		defer closeWrite(b)
 		n, err := io.Copy(b, readerFunc{ctx: ctx, r: a})
 		stats.AddSent(n)
 		if onBytes != nil && n > 0 {
@@ -63,7 +63,7 @@ func BidirectionalWithCallback(ctx context.Context, a, b io.ReadWriteCloser, onB
 	})
 
 	g.Go(func() error {
-		defer a.Close()
+		defer closeWrite(a)
 		n, err := io.Copy(a, readerFunc{ctx: ctx, r: b})
 		stats.AddReceived(n)
 		if onBytes != nil && n > 0 {
@@ -73,6 +73,10 @@ func BidirectionalWithCallback(ctx context.Context, a, b io.ReadWriteCloser, onB
 	})
 
 	err := g.Wait()
+
+	a.Close()
+	b.Close()
+
 	result := &RelayResult{Stats: stats}
 
 	if err != nil {
@@ -80,6 +84,18 @@ func BidirectionalWithCallback(ctx context.Context, a, b io.ReadWriteCloser, onB
 	}
 
 	return result, nil
+}
+
+type closeWriter interface {
+	CloseWrite() error
+}
+
+func closeWrite(c io.ReadWriteCloser) {
+	if cw, ok := c.(closeWriter); ok {
+		cw.CloseWrite()
+	} else {
+		c.Close()
+	}
 }
 
 type readerFunc struct {

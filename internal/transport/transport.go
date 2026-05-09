@@ -255,6 +255,14 @@ func LoadPublicTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 	return buildPublicTLSConfig(cert), nil
 }
 
+func PublicTLSConfigWithCertFiles(certFile, keyFile string) (*tls.Config, error) {
+	return LoadPublicTLSConfig(certFile, keyFile)
+}
+
+func PublicTLSConfigWithSNISelfSigned(baseDomain string) (*tls.Config, error) {
+	return GenerateWildcardSelfSignedTLSConfig(baseDomain)
+}
+
 func buildQUICTLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -267,44 +275,6 @@ func buildPublicTLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
-	}
-}
-
-type SNIRouterFunc func(hostname string) bool
-
-func PublicTLSConfigWithSNI(certFile, keyFile string, router SNIRouterFunc) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS cert/key: %w", err)
-	}
-	return publicTLSConfigWithSNICallback(cert, router), nil
-}
-
-func PublicTLSConfigWithSNISelfSigned(baseDomain string, router SNIRouterFunc) (*tls.Config, error) {
-	cfg, err := GenerateWildcardSelfSignedTLSConfig(baseDomain)
-	if err != nil {
-		return nil, err
-	}
-	cert := cfg.Certificates[0]
-	return publicTLSConfigWithSNICallback(cert, router), nil
-}
-
-func publicTLSConfigWithSNICallback(cert tls.Certificate, router SNIRouterFunc) *tls.Config {
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-			if hello.ServerName == "" {
-				return nil, fmt.Errorf("SNI hostname required")
-			}
-			if !router(hello.ServerName) {
-				return nil, fmt.Errorf("unknown tunnel host: %s", hello.ServerName)
-			}
-			return &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				MinVersion:   tls.VersionTLS12,
-			}, nil
-		},
 	}
 }
 
