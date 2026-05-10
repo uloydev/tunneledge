@@ -11,7 +11,7 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 - **QUIC Transport** — Low-latency, multiplexed streams over a single connection with built-in TLS 1.3
 - **TCP Forwarding** — Expose any local TCP service (HTTP, databases, custom protocols)
 - **Multiplexed Streams** — Multiple independent streams over a single QUIC connection, no head-of-line blocking
-- **SNI Domain Routing** — Each tunnel gets a unique subdomain (e.g., `web.tunneledge.dev`), routed via TLS SNI on a single port
+- **SNI Domain Routing** — Each tunnel gets a unique subdomain (e.g., `web-agent-1.tunneledge.dev`), routed via TLS SNI on a single port
 - **Automatic Reconnection** — Exponential backoff with jitter on connection loss
 - **Token Authentication** — Constant-time token validation for agent authentication
 - **Structured Logging** — JSON logs with tunnel IDs, stream IDs, and correlation context
@@ -55,7 +55,7 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 All public traffic arrives on a **single TLS port** (default `:443`). The gateway uses **TLS SNI (Server Name Indiation)** to determine the target tunnel:
 
 1. DNS: wildcard `*.tunneledge.dev` → gateway IP
-2. Client connects to `web.tunneledge.dev:443` via TLS
+2. Client connects to `web-agent-1.tunneledge.dev:443` via TLS
 3. During TLS handshake, gateway reads the SNI hostname
 4. SNI → tunnel lookup via `TunnelRouter`
 5. Gateway opens QUIC stream to agent → relay begins
@@ -65,8 +65,8 @@ This avoids the need for multiple public ports — only **two ports** are needed
 ### Data Flow
 
 1. Agent dials gateway over QUIC, authenticates with token
-2. Gateway registers tunnel, assigns subdomains (e.g., `web.tunneledge.dev`, `api.tunneledge.dev`)
-3. Public client connects via TLS to `web.tunneledge.dev:443`
+2. Gateway registers tunnel, assigns subdomains (e.g., `web-agent-1.tunneledge.dev`, `api-agent-1.tunneledge.dev`)
+3. Public client connects via TLS to `web-agent-1.tunneledge.dev:443`
 4. Gateway reads SNI during TLS handshake, resolves tunnel
 5. Gateway opens a QUIC stream to the agent
 6. Agent connects to the local TCP service
@@ -109,7 +109,7 @@ A single QUIC connection between agent and gateway supports **multiple concurren
 7. Agent enters stream accept loop
 
 ### Incoming Public Request
-1. Public client connects to `web.tunneledge.dev:443` via TLS
+1. Public client connects to `web-agent-1.tunneledge.dev:443` via TLS
 2. Gateway performs TLS handshake, reads SNI hostname
 3. `TunnelRouter` resolves hostname → tunnel ID
 4. Gateway opens QUIC stream to agent
@@ -212,11 +212,11 @@ Terminal 4 — Test with a local service (e.g., echo server):
 socat TCP-LISTEN:3000,fork EXEC:cat
 
 # Add hosts entry for local testing
-echo "127.0.0.1 web.tunneledge.dev" | sudo tee -a /etc/hosts
+echo "127.0.0.1 web-agent-1.tunneledge.dev" | sudo tee -a /etc/hosts
 
 # Connect via TLS SNI
-echo "Hello TunnelEdge" | openssl s_client -connect web.tunneledge.dev:443 \
-  -servername web.tunneledge.dev -quiet
+echo "Hello TunnelEdge" | openssl s_client -connect web-agent-1.tunneledge.dev:443 \
+  -servername web-agent-1.tunneledge.dev -quiet
 ```
 
 ---
@@ -298,11 +298,11 @@ All services use the `TE_` prefix:
 make docker-up
 
 # 2. Add hosts entry for local testing
-echo "127.0.0.1 web.tunneledge.dev" | sudo tee -a /etc/hosts
+echo "127.0.0.1 web-agent-1.tunneledge.dev" | sudo tee -a /etc/hosts
 
 # 3. Connect to the tunnel via TLS
-echo "Hello TunnelEdge" | openssl s_client -connect web.tunneledge.dev:443 \
-  -servername web.tunneledge.dev -quiet
+echo "Hello TunnelEdge" | openssl s_client -connect web-agent-1.tunneledge.dev:443 \
+  -servername web-agent-1.tunneledge.dev -quiet
 # Output: Hello TunnelEdge
 
 # 4. Check metrics
