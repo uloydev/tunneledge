@@ -9,6 +9,8 @@ import (
 
 	"tunneledge/internal/auth"
 	"tunneledge/internal/gateway"
+	"tunneledge/internal/registry"
+	"tunneledge/internal/store"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
@@ -29,10 +31,13 @@ func main() {
 	})
 	log.Logger = logr.Logger
 
-	tokens := map[string]string{
-		"dev-token":   "agent-1",
-		"dev-token-2": "agent-2",
+	authenticator := resolveAuthenticator(cfg)
+
+	registryClient, err := registry.NewGRPCRegistryClient(cfg.Gateway.RegistryAddr)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to connect to registry")
 	}
+	defer registryClient.Close()
 
 	var m *metrics.Metrics
 	var metricsSrv *metrics.Server
@@ -46,11 +51,11 @@ func main() {
 		QUICListenAddr:   cfg.Gateway.QUICListenAddr,
 		PublicListenAddr: cfg.Gateway.PublicListenAddr,
 		BaseDomain:       cfg.Gateway.BaseDomain,
-		RegistryAddr:     cfg.Gateway.RegistryAddr,
 		TLSCertFile:      cfg.Gateway.TLSCertFile,
 		TLSKeyFile:       cfg.Gateway.TLSKeyFile,
 		MaxStreams:       cfg.Gateway.MaxStreams,
-		Authenticator:    auth.NewTokenAuthenticator(tokens),
+		Authenticator:    authenticator,
+		RegistryClient:   registryClient,
 		Metrics:          m,
 	})
 	if err != nil {
@@ -78,4 +83,37 @@ func main() {
 	}
 
 	log.Info().Msg("gateway stopped")
+}
+
+func resolveAuthenticator(cfg *config.Config) auth.Authenticator {
+	if cfg.DB.Driver == "postgres" && cfg.DB.DSN != "" {
+		dbStore, err := store.NewStore(cfg.DB.DSN)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to connect to database")
+		}
+
+		if cfg.DB.AutoMigrate {
+			if err := dbStore.AutoMigrate(); err != nil {
+				log.Fatal().Err(err).Msg("failed to run auto migrations")
+			}
+		}
+
+		if err := dbStore.SeedDefaultTokens(); err != nil {
+			log.Fatal().Err(err).Msg("failed to seed default tokens")
+		}
+
+		tokens, err := dbStore.LoadTokens()
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to load tokens from database")
+		}
+
+		log.Info().Int("token_count", len(tokens)).Msg("tokens loaded from database")
+		return auth.NewTokenAuthenticator(tokens)
+	}
+
+	log.Warn().Msg("using in-memory token store (no database configured)")
+	return auth.NewTokenAuthenticator(map[string]string{
+		"dev-token":   "agent-1",
+		"dev-token-2": "agent-2",
+	})
 }

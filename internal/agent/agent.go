@@ -6,10 +6,12 @@ import (
 	"math"
 	"math/rand/v2"
 	"net"
+	"sync"
 	"time"
 
 	"tunneledge/internal/relay"
 	"tunneledge/internal/transport"
+	"tunneledge/pkg/config"
 	"tunneledge/pkg/metrics"
 
 	"github.com/quic-go/quic-go"
@@ -19,24 +21,23 @@ import (
 type Agent struct {
 	gatewayAddr       string
 	token             string
-	localAddr         string
-	tlsConfig         *tlsConfig
-	conn              *quic.Conn
-	tunnelID          string
+	tunnels           []config.TunnelConfig
+	tunnelMap         map[string]string
 	metrics           *metrics.Metrics
 	reconnectDelay    time.Duration
 	maxReconnect      int
 	heartbeatInterval time.Duration
-}
 
-type tlsConfig struct {
-	skipVerify bool
+	mu        sync.RWMutex
+	conn      *quic.Conn
+	tunnelID  string
+	publicURLs map[string]string
 }
 
 type Options struct {
 	GatewayAddr       string
 	Token             string
-	LocalAddr         string
+	Tunnels           []config.TunnelConfig
 	ReconnectDelay    time.Duration
 	MaxReconnect      int
 	HeartbeatInterval time.Duration
@@ -44,21 +45,28 @@ type Options struct {
 }
 
 func NewAgent(opts Options) *Agent {
+	tunnelMap := make(map[string]string, len(opts.Tunnels))
+	for _, t := range opts.Tunnels {
+		tunnelMap[t.Label] = t.LocalAddr
+	}
+
 	return &Agent{
 		gatewayAddr:       opts.GatewayAddr,
 		token:             opts.Token,
-		localAddr:         opts.LocalAddr,
+		tunnels:           opts.Tunnels,
+		tunnelMap:         tunnelMap,
 		reconnectDelay:    opts.ReconnectDelay,
 		maxReconnect:      opts.MaxReconnect,
 		heartbeatInterval: opts.HeartbeatInterval,
 		metrics:           opts.Metrics,
-		tlsConfig:         &tlsConfig{skipVerify: true},
+		publicURLs:        make(map[string]string),
 	}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
 	attempts := 0
 	delay := a.reconnectDelay
+	maxRetries := a.maxReconnect
 
 	for {
 		select {
@@ -78,9 +86,11 @@ func (a *Agent) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		a.maxReconnect--
-		if a.maxReconnect == 0 {
-			return fmt.Errorf("max reconnect attempts reached: %w", err)
+		if maxRetries > 0 {
+			maxRetries--
+			if maxRetries == 0 {
+				return fmt.Errorf("max reconnect attempts reached: %w", err)
+			}
 		}
 
 		attempts++
@@ -105,15 +115,15 @@ func (a *Agent) Run(ctx context.Context) error {
 
 func (a *Agent) connect(ctx context.Context) error {
 	tlsCfg := transport.ClientTLSConfig()
-	if !a.tlsConfig.skipVerify {
-		tlsCfg.InsecureSkipVerify = false
-	}
 
 	conn, err := transport.QUICDial(ctx, a.gatewayAddr, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("failed to dial gateway: %w", err)
 	}
+
+	a.mu.Lock()
 	a.conn = conn
+	a.mu.Unlock()
 
 	log.Info().Str("gateway_addr", a.gatewayAddr).Msg("QUIC connection established")
 	defer func() {
@@ -127,6 +137,26 @@ func (a *Agent) connect(ctx context.Context) error {
 	}
 	defer authStream.Close()
 
+	if len(a.tunnels) > 0 {
+		return a.authenticateV2(ctx, conn, authStream)
+	}
+	return a.authenticateV1(ctx, conn, authStream)
+}
+
+func (a *Agent) setTunnelInfo(tunnelID string, publicURLs map[string]string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tunnelID = tunnelID
+	a.publicURLs = publicURLs
+}
+
+func (a *Agent) getConn() *quic.Conn {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.conn
+}
+
+func (a *Agent) authenticateV1(ctx context.Context, conn *quic.Conn, authStream *quic.Stream) error {
 	if err := transport.EncodeAuth(authStream, a.token); err != nil {
 		return fmt.Errorf("failed to send auth: %w", err)
 	}
@@ -140,17 +170,69 @@ func (a *Agent) connect(ctx context.Context) error {
 		return fmt.Errorf("authentication rejected by gateway")
 	}
 
-	a.tunnelID = authResp.TunnelID
+	a.setTunnelInfo(authResp.TunnelID, map[string]string{"default": authResp.PublicURL})
+
 	log.Info().
-		Str("tunnel_id", a.tunnelID).
+		Str("tunnel_id", authResp.TunnelID).
 		Str("public_url", authResp.PublicURL).
-		Msg("authenticated with gateway")
+		Msg("authenticated with gateway (v1)")
 
 	if a.metrics != nil {
 		a.metrics.ActiveTunnels.Inc()
 		a.metrics.TunnelCreated.WithLabelValues("success").Inc()
 	}
 
+	return a.streamLoop(ctx, conn)
+}
+
+func (a *Agent) authenticateV2(ctx context.Context, conn *quic.Conn, authStream *quic.Stream) error {
+	tunnelEntries := make([]transport.TunnelEntry, 0, len(a.tunnels))
+	for _, t := range a.tunnels {
+		tunnelEntries = append(tunnelEntries, transport.TunnelEntry{
+			Label:     t.Label,
+			LocalAddr: t.LocalAddr,
+		})
+	}
+
+	if err := transport.EncodeAuthV2(authStream, a.token, tunnelEntries); err != nil {
+		return fmt.Errorf("failed to send auth v2: %w", err)
+	}
+
+	authResp, err := transport.DecodeAuthV2Response(authStream)
+	if err != nil {
+		return fmt.Errorf("failed to read auth v2 response: %w", err)
+	}
+
+	if authResp.Status != transport.AuthStatusOK {
+		return fmt.Errorf("authentication rejected by gateway")
+	}
+
+	publicURLs := make(map[string]string, len(authResp.Tunnels))
+	for _, t := range authResp.Tunnels {
+		publicURLs[t.Label] = t.Hostname
+		log.Info().
+			Str("tunnel_id", authResp.TunnelID).
+			Str("label", t.Label).
+			Str("public_url", t.Hostname).
+			Msg("tunnel registered")
+	}
+
+	a.setTunnelInfo(authResp.TunnelID, publicURLs)
+
+	log.Info().
+		Str("tunnel_id", authResp.TunnelID).
+		Int("tunnel_count", len(authResp.Tunnels)).
+		Msg("authenticated with gateway (v2 multi-tunnel)")
+
+	if a.metrics != nil {
+		a.metrics.ActiveTunnels.Inc()
+		a.metrics.TunnelCreated.WithLabelValues("success").Inc()
+	}
+
+	return a.streamLoop(ctx, conn)
+}
+
+func (a *Agent) streamLoop(ctx context.Context, conn *quic.Conn) error {
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	go a.heartbeatLoop(heartbeatCtx)
 	defer heartbeatCancel()
@@ -173,13 +255,33 @@ func (a *Agent) connect(ctx context.Context) error {
 
 func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 	streamID := fmt.Sprintf("s-%d", qstream.StreamID())
-	logger := log.With().Str("tunnel_id", a.tunnelID).Str("stream_id", streamID).Logger()
 
+	a.mu.RLock()
+	tunnelID := a.tunnelID
+	a.mu.RUnlock()
+
+	logger := log.With().Str("tunnel_id", tunnelID).Str("stream_id", streamID).Logger()
+
+	label, err := transport.DecodeStreamLabel(qstream)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to read stream label")
+		qstream.Close()
+		return
+	}
+
+	localAddr, ok := a.tunnelMap[label]
+	if !ok {
+		logger.Error().Str("label", label).Msg("unknown tunnel label")
+		qstream.Close()
+		return
+	}
+
+	logger = logger.With().Str("label", label).Str("local_addr", localAddr).Logger()
 	logger.Info().Msg("incoming stream from gateway")
 
-	tcpConn, err := net.DialTimeout("tcp", a.localAddr, 10*time.Second)
+	tcpConn, err := net.DialTimeout("tcp", localAddr, 10*time.Second)
 	if err != nil {
-		logger.Error().Err(err).Str("local_addr", a.localAddr).Msg("failed to connect to local service")
+		logger.Error().Err(err).Msg("failed to connect to local service")
 		qstream.Close()
 		return
 	}
@@ -193,8 +295,8 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 
 	if a.metrics != nil {
 		a.metrics.ActiveStreams.Dec()
-		a.metrics.BytesForwarded.WithLabelValues("sent", a.tunnelID).Add(float64(result.Stats.GetSent()))
-		a.metrics.BytesForwarded.WithLabelValues("received", a.tunnelID).Add(float64(result.Stats.GetReceived()))
+		a.metrics.BytesForwarded.WithLabelValues("sent", tunnelID).Add(float64(result.Stats.GetSent()))
+		a.metrics.BytesForwarded.WithLabelValues("received", tunnelID).Add(float64(result.Stats.GetReceived()))
 	}
 
 	logger.Info().Int64("sent", result.Stats.GetSent()).Int64("received", result.Stats.GetReceived()).Msg("stream closed")
@@ -209,7 +311,11 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s, err := a.conn.OpenStreamSync(ctx)
+			conn := a.getConn()
+			if conn == nil {
+				return
+			}
+			s, err := conn.OpenStreamSync(ctx)
 			if err != nil {
 				log.Warn().Err(err).Msg("failed to open heartbeat stream")
 				return
@@ -225,5 +331,17 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 }
 
 func (a *Agent) TunnelID() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.tunnelID
+}
+
+func (a *Agent) PublicURLs() map[string]string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	result := make(map[string]string, len(a.publicURLs))
+	for k, v := range a.publicURLs {
+		result[k] = v
+	}
+	return result
 }

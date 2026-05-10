@@ -9,3 +9,7 @@ base_domain: tunneledge.dev
 registry_addr: localhost:50051
 shutdown_timeout: 15s
 max_streams: 1000
+
+db_driver: postgres
+db_dsn: "host=localhost port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable"
+db_auto_migrate: true

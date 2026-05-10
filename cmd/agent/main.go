@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ var (
 	flagGatewayAddr string
 	flagToken       string
 	flagLocalAddr   string
+	flagTunnels     []string
 	flagLogLevel    string
 	flagLogFormat   string
 	flagMetricsAddr string
@@ -31,7 +33,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "tunneledge-agent",
 		Short: "TunnelEdge Agent — Expose local TCP services via QUIC tunnel",
-		Long:  "TunnelEdge Agent connects to a TunnelEdge Gateway via QUIC and relays traffic to a local TCP service.",
+		Long:  "TunnelEdge Agent connects to a TunnelEdge Gateway via QUIC and relays traffic to local TCP services.",
 		RunE:  runAgent,
 	}
 
@@ -39,16 +41,29 @@ func main() {
 	rootCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
 	rootCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token (required)")
 	rootCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
+	rootCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
 	rootCmd.Flags().StringVar(&flagLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	rootCmd.Flags().StringVar(&flagLogFormat, "log-format", "", "log format: json, console")
 	rootCmd.Flags().StringVar(&flagMetricsAddr, "metrics-addr", "", "metrics server address")
 
 	_ = rootCmd.MarkFlagRequired("token")
-	_ = rootCmd.MarkFlagRequired("local-addr")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func parseTunnelFlag(s string) (label, localAddr string, err error) {
+	parts := strings.SplitN(s, "=", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid tunnel format %q: expected label=local_addr", s)
+	}
+	label = strings.TrimSpace(parts[0])
+	localAddr = strings.TrimSpace(parts[1])
+	if label == "" || localAddr == "" {
+		return "", "", fmt.Errorf("invalid tunnel format %q: both label and local_addr required", s)
+	}
+	return label, localAddr, nil
 }
 
 func runAgent(cmd *cobra.Command, args []string) error {
@@ -81,6 +96,11 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		cfg.Observability.MetricsAddr = flagMetricsAddr
 	}
 
+	tunnels, err := resolveTunnels(cfg, flagTunnels, flagLocalAddr)
+	if err != nil {
+		return err
+	}
+
 	logr := logger.New(logger.Config{
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
@@ -90,8 +110,15 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	log.Info().
 		Str("service", cfg.ServiceName).
 		Str("gateway_addr", cfg.Agent.GatewayAddr).
-		Str("local_addr", cfg.Agent.LocalAddr).
+		Int("tunnel_count", len(tunnels)).
 		Msg("starting agent")
+
+	for _, t := range tunnels {
+		log.Info().
+			Str("label", t.Label).
+			Str("local_addr", t.LocalAddr).
+			Msg("configured tunnel")
+	}
 
 	var m *metrics.Metrics
 	var metricsSrv *metrics.Server
@@ -104,7 +131,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	a := agent.NewAgent(agent.Options{
 		GatewayAddr:       cfg.Agent.GatewayAddr,
 		Token:             cfg.Agent.Token,
-		LocalAddr:         cfg.Agent.LocalAddr,
+		Tunnels:           tunnels,
 		ReconnectDelay:    cfg.Agent.ReconnectDelay,
 		MaxReconnect:      cfg.Agent.MaxReconnect,
 		HeartbeatInterval: cfg.Agent.HeartbeatInterval,
@@ -126,4 +153,31 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 	log.Info().Msg("agent stopped")
 	return nil
+}
+
+func resolveTunnels(cfg *config.Config, flagTunnels []string, flagLocalAddr string) ([]config.TunnelConfig, error) {
+	if len(flagTunnels) > 0 {
+		if flagLocalAddr != "" {
+			return nil, fmt.Errorf("cannot use both --local-addr and --tunnel flags")
+		}
+		tunnels := make([]config.TunnelConfig, 0, len(flagTunnels))
+		for _, t := range flagTunnels {
+			label, localAddr, err := parseTunnelFlag(t)
+			if err != nil {
+				return nil, err
+			}
+			tunnels = append(tunnels, config.TunnelConfig{Label: label, LocalAddr: localAddr})
+		}
+		return tunnels, nil
+	}
+
+	if cfg.Agent.LocalAddr != "" {
+		return []config.TunnelConfig{{Label: "default", LocalAddr: cfg.Agent.LocalAddr}}, nil
+	}
+
+	if len(cfg.Agent.Tunnels) > 0 {
+		return cfg.Agent.Tunnels, nil
+	}
+
+	return nil, fmt.Errorf("no tunnels configured: use --tunnel or --local-addr")
 }

@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"tunneledge/internal/auth"
-	"tunneledge/internal/session"
+	"tunneledge/internal/domain"
 	pb "tunneledge/proto/registry/v1"
 
 	"github.com/rs/zerolog/log"
@@ -17,16 +16,14 @@ import (
 type Server struct {
 	pb.UnimplementedRegistryServiceServer
 
-	store         session.Store
-	authenticator auth.Authenticator
+	store         domain.SessionRepository
 	cleanupCancel context.CancelFunc
 }
 
-func NewServer(store session.Store, authenticator auth.Authenticator, cleanupInterval, sessionTTL time.Duration) *Server {
+func NewServer(store domain.SessionRepository, cleanupInterval, sessionTTL time.Duration) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		store:         store,
-		authenticator: authenticator,
 		cleanupCancel: cancel,
 	}
 	go s.cleanupLoop(ctx, cleanupInterval, sessionTTL)
@@ -42,21 +39,10 @@ func (s *Server) Stop() {
 func (s *Server) RegisterTunnel(ctx context.Context, req *pb.RegisterTunnelRequest) (*pb.RegisterTunnelResponse, error) {
 	logger := log.With().Str("tunnel_id", req.TunnelId).Str("agent_id", req.AgentId).Logger()
 
-	if req.Token == "" {
-		return nil, status.Error(codes.Unauthenticated, "token is required")
-	}
-
-	agentID, err := s.authenticator.Authenticate(req.Token)
-	if err != nil {
-		logger.Warn().Err(err).Msg("authentication failed")
-		return nil, status.Error(codes.Unauthenticated, "authentication failed")
-	}
-
-	sess := &session.Session{
-		TunnelID:   req.TunnelId,
-		AgentID:    agentID,
-		LocalAddr:  req.LocalAddr,
-		RemoteAddr: "",
+	sess := &domain.Session{
+		TunnelID:  req.TunnelId,
+		AgentID:   req.AgentId,
+		LocalAddr: req.LocalAddr,
 	}
 
 	if err := s.store.Register(sess); err != nil {
@@ -65,7 +51,6 @@ func (s *Server) RegisterTunnel(ctx context.Context, req *pb.RegisterTunnelReque
 	}
 
 	publicAddr := fmt.Sprintf(":%s", req.TunnelId)
-
 	logger.Info().Str("public_addr", publicAddr).Msg("tunnel registered")
 
 	return &pb.RegisterTunnelResponse{

@@ -8,14 +8,20 @@ import (
 	"github.com/spf13/viper"
 )
 
+type TunnelConfig struct {
+	Label     string `mapstructure:"label" yaml:"label"`
+	LocalAddr string `mapstructure:"local_addr" yaml:"local_addr"`
+}
+
 type AgentConfig struct {
-	GatewayAddr       string        `mapstructure:"gateway_addr"`
-	Token             string        `mapstructure:"token"`
-	LocalAddr         string        `mapstructure:"local_addr"`
-	ReconnectDelay    time.Duration `mapstructure:"reconnect_delay"`
-	MaxReconnect      int           `mapstructure:"max_reconnect"`
-	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
-	QUICTimeout       time.Duration `mapstructure:"quic_timeout"`
+	GatewayAddr       string         `mapstructure:"gateway_addr"`
+	Token             string         `mapstructure:"token"`
+	LocalAddr         string         `mapstructure:"local_addr"`
+	Tunnels           []TunnelConfig `mapstructure:"tunnels"`
+	ReconnectDelay    time.Duration  `mapstructure:"reconnect_delay"`
+	MaxReconnect      int            `mapstructure:"max_reconnect"`
+	HeartbeatInterval time.Duration  `mapstructure:"heartbeat_interval"`
+	QUICTimeout       time.Duration  `mapstructure:"quic_timeout"`
 }
 
 type GatewayConfig struct {
@@ -47,6 +53,15 @@ type ObservabilityConfig struct {
 	TracingEndpoint string `mapstructure:"tracing_endpoint"`
 }
 
+type DBConfig struct {
+	Driver          string        `mapstructure:"db_driver"`
+	DSN             string        `mapstructure:"db_dsn"`
+	MaxOpenConns    int           `mapstructure:"db_max_open_conns"`
+	MaxIdleConns    int           `mapstructure:"db_max_idle_conns"`
+	ConnMaxLifetime time.Duration `mapstructure:"db_conn_max_lifetime"`
+	AutoMigrate     bool          `mapstructure:"db_auto_migrate"`
+}
+
 type Config struct {
 	ServiceName   string              `mapstructure:"service_name"`
 	Log           LogConfig           `mapstructure:",squash"`
@@ -54,6 +69,7 @@ type Config struct {
 	Agent         AgentConfig         `mapstructure:",squash"`
 	Gateway       GatewayConfig       `mapstructure:",squash"`
 	Registry      RegistryConfig      `mapstructure:",squash"`
+	DB            DBConfig            `mapstructure:",squash"`
 }
 
 type ServiceType string
@@ -72,6 +88,13 @@ func defaults(svc ServiceType) {
 	viper.SetDefault("metrics_addr", ":9090")
 	viper.SetDefault("tracing_enabled", false)
 	viper.SetDefault("tracing_endpoint", "localhost:4317")
+
+	viper.SetDefault("db_driver", "memory")
+	viper.SetDefault("db_dsn", "")
+	viper.SetDefault("db_max_open_conns", 10)
+	viper.SetDefault("db_max_idle_conns", 5)
+	viper.SetDefault("db_conn_max_lifetime", 5*time.Minute)
+	viper.SetDefault("db_auto_migrate", true)
 
 	switch svc {
 	case ServiceAgent:

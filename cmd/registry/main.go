@@ -8,9 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"tunneledge/internal/auth"
+	"tunneledge/internal/domain"
 	"tunneledge/internal/registry"
-	"tunneledge/internal/session"
+	"tunneledge/internal/store"
+	"tunneledge/internal/store/pgstore"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
@@ -32,14 +33,9 @@ func main() {
 	})
 	log.Logger = logr.Logger
 
-	tokens := map[string]string{
-		"dev-token":   "agent-1",
-		"dev-token-2": "agent-2",
-	}
+	sessStore := resolveSessionStore(cfg)
 
-	authenticator := auth.NewTokenAuthenticator(tokens)
-	store := session.NewMemoryStore()
-	srv := registry.NewServer(store, authenticator, cfg.Registry.CleanupInterval, cfg.Registry.SessionTTL)
+	srv := registry.NewServer(sessStore, cfg.Registry.CleanupInterval, cfg.Registry.SessionTTL)
 	defer srv.Stop()
 
 	var metricsSrv *metrics.Server
@@ -61,6 +57,7 @@ func main() {
 	log.Info().
 		Str("service", cfg.ServiceName).
 		Str("grpc_listen_addr", cfg.Registry.GRPCListenAddr).
+		Str("db_driver", cfg.DB.Driver).
 		Msg("starting registry")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -84,4 +81,30 @@ func main() {
 	}
 
 	log.Info().Msg("registry stopped")
+}
+
+func resolveSessionStore(cfg *config.Config) domain.SessionRepository {
+	if cfg.DB.Driver == "postgres" && cfg.DB.DSN != "" {
+		dbStore, err := store.NewStore(cfg.DB.DSN)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to connect to database")
+		}
+
+		if cfg.DB.AutoMigrate {
+			if err := dbStore.AutoMigrate(); err != nil {
+				log.Fatal().Err(err).Msg("failed to run auto migrations")
+			}
+			log.Info().Msg("database migrations completed")
+		}
+
+		if err := dbStore.SeedDefaultTokens(); err != nil {
+			log.Fatal().Err(err).Msg("failed to seed default tokens")
+		}
+
+		log.Info().Msg("using PostgreSQL session store")
+		return pgstore.NewPGSessionRepository(dbStore.GetDB())
+	}
+
+	log.Warn().Msg("using in-memory session store")
+	return domain.NewMemorySessionRepository()
 }

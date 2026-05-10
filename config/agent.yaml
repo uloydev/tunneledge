@@ -5,7 +5,11 @@ metrics_addr: :9092
 
 gateway_addr: localhost:4433
 token: dev-token
-local_addr: localhost:3000
+tunnels:
+  - label: web
+    local_addr: localhost:3000
+  - label: api
+    local_addr: localhost:8080
 reconnect_delay: 2s
 max_reconnect: 0
 heartbeat_interval: 15s

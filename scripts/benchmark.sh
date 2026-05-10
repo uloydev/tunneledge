@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${TE_BENCH_HOST:-agent-2.tunneledge.dev}"
+HOST="${TE_BENCH_HOST:-api.agent-1.tunneledge.dev}"
 PORT="${TE_BENCH_PORT:-443}"
-TIMEOUT_SEC="${TE_BENCH_TIMEOUT:-15}"
-CONCURRENT="${TE_BENCH_CONCURRENT:-1}"
+TIMEOUT_SEC="${TE_BENCH_TIMEOUT:-360}"   # Increased from 15 to 30 for concurrent load
+CONCURRENT="${TE_BENCH_CONCURRENT:-500}"
 
-echo "TunnelEdge HTTP Benchmark"
-echo "========================="
+if ! command -v k6 &>/dev/null; then
+    echo "error: 'k6' is not installed — install from https://k6.io/docs/get-started/installation/"
+    exit 1
+fi
+
+echo "TunnelEdge HTTP Benchmark (k6)"
+echo "================================"
 echo "Target:   https://${HOST}:${PORT}"
 echo "Workers:  ${CONCURRENT}"
 echo ""
@@ -32,92 +37,60 @@ else
 fi
 echo ""
 
-run_single() {
-    local size=$1
-    local tmpfile
-    tmpfile=$(mktemp /tmp/tunneledge-bench.XXXXXX)
+# ── Generate k6 Test Script ─────────────────────────────────────────
+K6_SCRIPT=$(mktemp /tmp/tunneledge-bench.XXXXXX.js)
+cat <<'K6EOF' > "$K6_SCRIPT"
+import http from 'k6/http';
+import { check } from 'k6';
 
-    dd if=/dev/zero bs="${size}" count=1 2>/dev/null | tr '\0' 'X' > "$tmpfile"
+export const options = {
+    insecureSkipTLSVerify: true,
+    // Use a scenario that gradually ramps up to prevent overwhelming the 
+    // server instantly (Thundering Herd) which causes request timeouts.
+    scenarios: {
+        benchmark: {
+            executor: 'ramping-vus',
+            startVUs: 0,
+            stages: [
+                { duration: '10s', target: parseInt(__ENV.CONCURRENT) }, // Ramp up
+                { duration: '15s', target: parseInt(__ENV.CONCURRENT) }, // Sustain peak load
+            ],
+            gracefulStop: '5s',
+        },
+    },
+};
 
-    start=$(date +%s%N)
+const size = parseInt(__ENV.PAYLOAD_SIZE);
+const payload = 'X'.repeat(size);
 
-    result=$(curl -sk -w "\n%{http_code} %{time_total}" \
-        --max-time "${TIMEOUT_SEC}" \
-        -X POST \
-        -H "Content-Type: application/octet-stream" \
-        --data-binary @"$tmpfile" \
-        "https://${HOST}:${PORT}/bench" 2>/dev/null) || true
+export default function () {
+    const params = {
+        headers: { 'Content-Type': 'application/octet-stream' },
+        timeout: `${__ENV.TIMEOUT_SEC}s`,
+    };
 
-    end=$(date +%s%N)
-    elapsed=$(( (end - start) / 1000000 ))
-
-    http_code=$(echo "$result" | tail -1 | awk '{print $1}')
-
-    if [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
-        echo "000 ${elapsed}"
-    else
-        echo "${http_code} ${elapsed}"
-    fi
-    rm -f "$tmpfile"
+    const res = http.post(`https://${__ENV.HOST}:${__ENV.PORT}/bench`, payload, params);
+    
+    check(res, {
+        'is status 200': (r) => r.status === 200,
+    });
 }
+K6EOF
 
+# ── Throughput tests ────────────────────────────────────────────────
 for size in 1024 10240 102400 1048576; do
     size_name=$(numfmt --to=iec-i --suffix=B "$size" 2>/dev/null || echo "${size} bytes")
     echo "--- ${size_name} ---"
 
-    results=()
-    for ((i = 0; i < CONCURRENT; i++)); do
-        results+=("$(run_single "$size")")
-    done
+    k6 run "$K6_SCRIPT" \
+        --no-color \
+        -e HOST="$HOST" \
+        -e PORT="$PORT" \
+        -e CONCURRENT="$CONCURRENT" \
+        -e TIMEOUT_SEC="$TIMEOUT_SEC" \
+        -e PAYLOAD_SIZE="$size" || true
 
-    total_time=0
-    ok=0
-    fail=0
-    for r in "${results[@]}"; do
-        code=${r%% *}
-        ms=${r##* }
-        if [ "$code" = "200" ]; then
-            ok=$((ok + 1))
-            total_time=$((total_time + ms))
-        else
-            fail=$((fail + 1))
-            echo "  FAIL: HTTP ${code} (${ms}ms)"
-        fi
-    done
-
-    if [ "$ok" -gt 0 ]; then
-        avg=$((total_time / ok))
-        throughput=$(echo "scale=2; ${size} / (${avg} / 1000)" | bc 2>/dev/null || echo "N/A")
-        echo "  Requests:  ${ok} ok, ${fail} failed"
-        echo "  Avg time:  ${avg}ms"
-        echo "  Throughput: ${throughput} bytes/s"
-    else
-        echo "  All requests failed"
-    fi
     echo ""
 done
 
-echo "--- Latency (1 byte payload, 10 requests) ---"
-latencies=()
-for ((i = 0; i < 10; i++)); do
-    r=$(run_single 1)
-    code=${r%% *}
-    ms=${r##* }
-    if [ "$code" = "200" ]; then
-        latencies+=("$ms")
-    fi
-done
-
-if [ ${#latencies[@]} -gt 0 ]; then
-    sorted=$(printf '%s\n' "${latencies[@]}" | sort -n)
-    min=$(echo "$sorted" | head -1)
-    max=$(echo "$sorted" | tail -1)
-    count=${#latencies[@]}
-    median=$(echo "$sorted" | sed -n "$(( (count + 1) / 2 ))p")
-    echo "  Samples: ${count}"
-    echo "  Min:     ${min}ms"
-    echo "  Median:  ${median}ms"
-    echo "  Max:     ${max}ms"
-else
-    echo "  All requests failed"
-fi
+rm -f "$K6_SCRIPT"

@@ -1,7 +1,7 @@
 .PHONY: help build build-agent build-gateway build-registry build-http-echo run run-registry run-gateway run-agent \
        run-local test test-unit test-verbose vet lint tidy fmt proto \
        docker-up docker-down docker-build docker-logs \
-       certs clean clean-bin all
+       seed-db certs clean clean-bin all
 
 BINARY_DIR  := bin
 GO          := go
@@ -87,13 +87,16 @@ proto: ## Regenerate protobuf Go code
 certs: ## Generate self-signed TLS certs
 	@bash scripts/generate-certs.sh
 
+seed-db: ## Seed default tokens into PostgreSQL
+	@bash scripts/seed-db.sh
+
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 docker-up: ## Start full stack with docker compose
-	docker compose -f $(DOCKER_DIR)/docker-compose.yml up --build -d
+	docker compose -f $(DOCKER_DIR)/docker-compose.yml up --build -d --remove-orphans
 
 docker-down: ## Stop docker compose stack
-	docker compose -f $(DOCKER_DIR)/docker-compose.yml down
+	docker compose -f $(DOCKER_DIR)/docker-compose.yml down --remove-orphans
 
 docker-build: ## Build all docker images (no start)
 	docker compose -f $(DOCKER_DIR)/docker-compose.yml build

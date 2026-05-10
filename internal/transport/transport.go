@@ -2,16 +2,10 @@ package transport
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math/big"
-	"net"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -24,6 +18,9 @@ const (
 	MsgData         byte = 0x03
 	MsgHeartbeat    byte = 0x04
 	MsgClose        byte = 0x05
+	MsgAuthV2       byte = 0x06
+	MsgAuthRespV2   byte = 0x07
+	MsgStreamLabel  byte = 0x08
 
 	AuthStatusOK    byte = 0x00
 	AuthStatusError byte = 0x01
@@ -31,6 +28,9 @@ const (
 	maxTokenLen     = 4096
 	maxTunnelIDLen  = 256
 	maxPublicURLLen = 512
+	maxLabelLen     = 64
+	maxLocalAddrLen = 256
+	maxTunnelCount  = 32
 )
 
 type AuthMessage struct {
@@ -159,131 +159,293 @@ func ReadMessageType(r io.Reader) (byte, error) {
 	return buf[0], nil
 }
 
-func GenerateSelfSignedTLSConfig() (*tls.Config, error) {
-	return generateWildcardQUICTLSConfig("localhost")
+type TunnelEntry struct {
+	Label     string
+	LocalAddr string
 }
 
-func GenerateWildcardSelfSignedTLSConfig(baseDomain string) (*tls.Config, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-	}
-
-	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(0).Lsh(big.NewInt(1), 128))
-
-	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"TunnelEdge Dev"},
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-		BasicConstraintsValid: true,
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
-		DNSNames: []string{
-			baseDomain,
-			"*." + baseDomain,
-		},
-	}
-
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create certificate: %w", err)
-	}
-
-	tlsCert := tls.Certificate{
-		Certificate: [][]byte{certDER},
-		PrivateKey:  key,
-	}
-
-	return buildPublicTLSConfig(tlsCert), nil
+type AuthV2Message struct {
+	Token   string
+	Tunnels []TunnelEntry
 }
 
-func generateWildcardQUICTLSConfig(baseDomain string) (*tls.Config, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-	}
-
-	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(0).Lsh(big.NewInt(1), 128))
-
-	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"TunnelEdge Dev"},
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-		BasicConstraintsValid: true,
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
-		DNSNames: []string{
-			baseDomain,
-			"*." + baseDomain,
-		},
-	}
-
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create certificate: %w", err)
-	}
-
-	tlsCert := tls.Certificate{
-		Certificate: [][]byte{certDER},
-		PrivateKey:  key,
-	}
-
-	return buildQUICTLSConfig(tlsCert), nil
+type TunnelHostEntry struct {
+	Label    string
+	Hostname string
 }
 
-func LoadTLSConfig(certFile, keyFile string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS cert/key: %w", err)
+type AuthV2ResponseMessage struct {
+	Status   byte
+	TunnelID string
+	Tunnels  []TunnelHostEntry
+}
+
+func EncodeAuthV2(w io.Writer, token string, tunnels []TunnelEntry) error {
+	tokenBytes := []byte(token)
+	if len(tokenBytes) > maxTokenLen {
+		return errs.New(errs.CodeInvalidArg, "token too long")
 	}
-	return buildQUICTLSConfig(cert), nil
-}
-
-func LoadPublicTLSConfig(certFile, keyFile string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS cert/key: %w", err)
+	if len(tunnels) > maxTunnelCount {
+		return errs.New(errs.CodeInvalidArg, "too many tunnels")
 	}
-	return buildPublicTLSConfig(cert), nil
-}
 
-func PublicTLSConfigWithCertFiles(certFile, keyFile string) (*tls.Config, error) {
-	return LoadPublicTLSConfig(certFile, keyFile)
-}
-
-func PublicTLSConfigWithSNISelfSigned(baseDomain string) (*tls.Config, error) {
-	return GenerateWildcardSelfSignedTLSConfig(baseDomain)
-}
-
-func buildQUICTLSConfig(cert tls.Certificate) *tls.Config {
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{"tunneledge"},
-		MinVersion:   tls.VersionTLS13,
+	size := 3 + len(tokenBytes) + 1
+	for _, t := range tunnels {
+		size += 1 + len(t.Label) + 2 + len(t.LocalAddr)
 	}
+
+	buf := make([]byte, size)
+	off := 0
+	buf[off] = MsgAuthV2
+	off++
+	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(tokenBytes)))
+	off += 2
+	copy(buf[off:], tokenBytes)
+	off += len(tokenBytes)
+	buf[off] = byte(len(tunnels))
+	off++
+
+	for _, t := range tunnels {
+		if len(t.Label) > maxLabelLen {
+			return errs.New(errs.CodeInvalidArg, fmt.Sprintf("label too long: %s", t.Label))
+		}
+		if len(t.LocalAddr) > maxLocalAddrLen {
+			return errs.New(errs.CodeInvalidArg, fmt.Sprintf("local_addr too long: %s", t.LocalAddr))
+		}
+		buf[off] = byte(len(t.Label))
+		off++
+		copy(buf[off:], t.Label)
+		off += len(t.Label)
+		binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(t.LocalAddr)))
+		off += 2
+		copy(buf[off:], t.LocalAddr)
+		off += len(t.LocalAddr)
+	}
+
+	_, err := w.Write(buf[:off])
+	return err
 }
 
-func buildPublicTLSConfig(cert tls.Certificate) *tls.Config {
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
+func DecodeAuthV2(r io.Reader) (*AuthV2Message, error) {
+	header := make([]byte, 3)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, fmt.Errorf("failed to read auth v2 header: %w", err)
 	}
+
+	if header[0] != MsgAuthV2 {
+		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected auth v2 message type 0x06, got 0x%02x", header[0]))
+	}
+
+	tokenLen := binary.BigEndian.Uint16(header[1:3])
+	if tokenLen > maxTokenLen {
+		return nil, errs.New(errs.CodeInvalidArg, "token too long")
+	}
+
+	tokenBuf := make([]byte, tokenLen)
+	if _, err := io.ReadFull(r, tokenBuf); err != nil {
+		return nil, fmt.Errorf("failed to read auth v2 token: %w", err)
+	}
+
+	countBuf := make([]byte, 1)
+	if _, err := io.ReadFull(r, countBuf); err != nil {
+		return nil, fmt.Errorf("failed to read tunnel count: %w", err)
+	}
+	tunnelCount := int(countBuf[0])
+	if tunnelCount > maxTunnelCount {
+		return nil, errs.New(errs.CodeInvalidArg, "too many tunnels")
+	}
+
+	tunnels := make([]TunnelEntry, 0, tunnelCount)
+	for i := 0; i < tunnelCount; i++ {
+		labelLenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(r, labelLenBuf); err != nil {
+			return nil, fmt.Errorf("failed to read label len: %w", err)
+		}
+		labelLen := int(labelLenBuf[0])
+		if labelLen > maxLabelLen {
+			return nil, errs.New(errs.CodeInvalidArg, "label too long")
+		}
+
+		labelBuf := make([]byte, labelLen)
+		if _, err := io.ReadFull(r, labelBuf); err != nil {
+			return nil, fmt.Errorf("failed to read label: %w", err)
+		}
+
+		addrLenBuf := make([]byte, 2)
+		if _, err := io.ReadFull(r, addrLenBuf); err != nil {
+			return nil, fmt.Errorf("failed to read local_addr len: %w", err)
+		}
+		addrLen := int(binary.BigEndian.Uint16(addrLenBuf))
+		if addrLen > maxLocalAddrLen {
+			return nil, errs.New(errs.CodeInvalidArg, "local_addr too long")
+		}
+
+		addrBuf := make([]byte, addrLen)
+		if _, err := io.ReadFull(r, addrBuf); err != nil {
+			return nil, fmt.Errorf("failed to read local_addr: %w", err)
+		}
+
+		tunnels = append(tunnels, TunnelEntry{
+			Label:     string(labelBuf),
+			LocalAddr: string(addrBuf),
+		})
+	}
+
+	return &AuthV2Message{Token: string(tokenBuf), Tunnels: tunnels}, nil
 }
 
-func ClientTLSConfig() *tls.Config {
-	return &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"tunneledge"},
-		MinVersion:         tls.VersionTLS13,
+func EncodeAuthV2Response(w io.Writer, status byte, tunnelID string, tunnels []TunnelHostEntry) error {
+	idBytes := []byte(tunnelID)
+	if len(idBytes) > maxTunnelIDLen {
+		return errs.New(errs.CodeInvalidArg, "tunnel_id too long")
 	}
+	if len(tunnels) > maxTunnelCount {
+		return errs.New(errs.CodeInvalidArg, "too many tunnels in response")
+	}
+
+	size := 4 + len(idBytes) + 1
+	for _, t := range tunnels {
+		size += 1 + len(t.Label) + 2 + len(t.Hostname)
+	}
+
+	buf := make([]byte, size)
+	off := 0
+	buf[off] = MsgAuthRespV2
+	off++
+	buf[off] = status
+	off++
+	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(idBytes)))
+	off += 2
+	copy(buf[off:], idBytes)
+	off += len(idBytes)
+	buf[off] = byte(len(tunnels))
+	off++
+
+	for _, t := range tunnels {
+		buf[off] = byte(len(t.Label))
+		off++
+		copy(buf[off:], t.Label)
+		off += len(t.Label)
+		binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(t.Hostname)))
+		off += 2
+		copy(buf[off:], t.Hostname)
+		off += len(t.Hostname)
+	}
+
+	_, err := w.Write(buf[:off])
+	return err
+}
+
+func DecodeAuthV2Response(r io.Reader) (*AuthV2ResponseMessage, error) {
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, fmt.Errorf("failed to read auth v2 response header: %w", err)
+	}
+
+	if header[0] != MsgAuthRespV2 {
+		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected auth v2 response type 0x07, got 0x%02x", header[0]))
+	}
+
+	status := header[1]
+	idLen := binary.BigEndian.Uint16(header[2:4])
+	if idLen > maxTunnelIDLen {
+		return nil, errs.New(errs.CodeInvalidArg, "tunnel_id too long")
+	}
+
+	var tunnelID string
+	if idLen > 0 {
+		idBuf := make([]byte, idLen)
+		if _, err := io.ReadFull(r, idBuf); err != nil {
+			return nil, fmt.Errorf("failed to read auth v2 response tunnel_id: %w", err)
+		}
+		tunnelID = string(idBuf)
+	}
+
+	countBuf := make([]byte, 1)
+	if _, err := io.ReadFull(r, countBuf); err != nil {
+		return nil, fmt.Errorf("failed to read tunnel count in response: %w", err)
+	}
+	tunnelCount := int(countBuf[0])
+	if tunnelCount > maxTunnelCount {
+		return nil, errs.New(errs.CodeInvalidArg, "too many tunnels in response")
+	}
+
+	tunnels := make([]TunnelHostEntry, 0, tunnelCount)
+	for i := 0; i < tunnelCount; i++ {
+		labelLenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(r, labelLenBuf); err != nil {
+			return nil, fmt.Errorf("failed to read response label len: %w", err)
+		}
+		labelLen := int(labelLenBuf[0])
+
+		labelBuf := make([]byte, labelLen)
+		if _, err := io.ReadFull(r, labelBuf); err != nil {
+			return nil, fmt.Errorf("failed to read response label: %w", err)
+		}
+
+		hostLenBuf := make([]byte, 2)
+		if _, err := io.ReadFull(r, hostLenBuf); err != nil {
+			return nil, fmt.Errorf("failed to read response hostname len: %w", err)
+		}
+		hostLen := int(binary.BigEndian.Uint16(hostLenBuf))
+		if hostLen > maxPublicURLLen {
+			return nil, errs.New(errs.CodeInvalidArg, "hostname too long")
+		}
+
+		hostBuf := make([]byte, hostLen)
+		if _, err := io.ReadFull(r, hostBuf); err != nil {
+			return nil, fmt.Errorf("failed to read response hostname: %w", err)
+		}
+
+		tunnels = append(tunnels, TunnelHostEntry{
+			Label:    string(labelBuf),
+			Hostname: string(hostBuf),
+		})
+	}
+
+	return &AuthV2ResponseMessage{
+		Status:   status,
+		TunnelID: tunnelID,
+		Tunnels:  tunnels,
+	}, nil
+}
+
+func EncodeStreamLabel(w io.Writer, label string) error {
+	labelBytes := []byte(label)
+	if len(labelBytes) > maxLabelLen {
+		return errs.New(errs.CodeInvalidArg, "label too long")
+	}
+
+	buf := make([]byte, 2+len(labelBytes))
+	buf[0] = MsgStreamLabel
+	buf[1] = byte(len(labelBytes))
+	copy(buf[2:], labelBytes)
+
+	_, err := w.Write(buf)
+	return err
+}
+
+func DecodeStreamLabel(r io.Reader) (string, error) {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return "", fmt.Errorf("failed to read stream label header: %w", err)
+	}
+
+	if header[0] != MsgStreamLabel {
+		return "", errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected stream label type 0x08, got 0x%02x", header[0]))
+	}
+
+	labelLen := int(header[1])
+	if labelLen > maxLabelLen {
+		return "", errs.New(errs.CodeInvalidArg, "label too long")
+	}
+
+	labelBuf := make([]byte, labelLen)
+	if _, err := io.ReadFull(r, labelBuf); err != nil {
+		return "", fmt.Errorf("failed to read stream label: %w", err)
+	}
+
+	return string(labelBuf), nil
 }
 
 func QUICDial(ctx context.Context, addr string, tlsCfg *tls.Config) (*quic.Conn, error) {
