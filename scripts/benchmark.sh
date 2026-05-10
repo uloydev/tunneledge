@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${TE_BENCH_HOST:-api.agent-1.tunneledge.dev}"
+HOST="${TE_BENCH_HOST:-api.tunneledge.dev}"
 PORT="${TE_BENCH_PORT:-443}"
 TIMEOUT_SEC="${TE_BENCH_TIMEOUT:-360}"   # Increased from 15 to 30 for concurrent load
 CONCURRENT="${TE_BENCH_CONCURRENT:-500}"

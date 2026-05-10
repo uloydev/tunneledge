@@ -54,7 +54,7 @@ run-local: ## Run all services locally (requires 3 terminals — prints instruct
 	@echo "  \033[36mTerminal 3 — Agent:\033[0m      make run-agent"
 	@echo ""
 	@echo "Then test with:"
-	@echo "  echo 'Hello' | openssl s_client -connect agent-1.tunneledge.dev:443 -servername agent-1.tunneledge.dev -quiet"
+	@echo "  echo 'Hello' | openssl s_client -connect web.tunneledge.dev:443 -servername web.tunneledge.dev -quiet"
 	@echo ""
 
 # ── Test & Quality ───────────────────────────────────────────────────────────

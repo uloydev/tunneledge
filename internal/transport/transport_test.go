@@ -113,8 +113,8 @@ func TestDecodeAuthV2_WrongType(t *testing.T) {
 func TestEncodeDecodeAuthV2Response(t *testing.T) {
 	var buf bytes.Buffer
 	tunnels := []TunnelHostEntry{
-		{Label: "web", Hostname: "web.agent-1.tunneledge.dev:443"},
-		{Label: "api", Hostname: "api.agent-1.tunneledge.dev:443"},
+		{Label: "web", Hostname: "web.tunneledge.dev:443"},
+		{Label: "api", Hostname: "api.tunneledge.dev:443"},
 	}
 
 	require.NoError(t, EncodeAuthV2Response(&buf, AuthStatusOK, "t-agent-1", tunnels))
@@ -125,9 +125,9 @@ func TestEncodeDecodeAuthV2Response(t *testing.T) {
 	assert.Equal(t, "t-agent-1", resp.TunnelID)
 	assert.Len(t, resp.Tunnels, 2)
 	assert.Equal(t, "web", resp.Tunnels[0].Label)
-	assert.Equal(t, "web.agent-1.tunneledge.dev:443", resp.Tunnels[0].Hostname)
+	assert.Equal(t, "web.tunneledge.dev:443", resp.Tunnels[0].Hostname)
 	assert.Equal(t, "api", resp.Tunnels[1].Label)
-	assert.Equal(t, "api.agent-1.tunneledge.dev:443", resp.Tunnels[1].Hostname)
+	assert.Equal(t, "api.tunneledge.dev:443", resp.Tunnels[1].Hostname)
 }
 
 func TestEncodeDecodeAuthV2Response_Empty(t *testing.T) {

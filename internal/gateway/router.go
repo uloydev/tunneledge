@@ -29,8 +29,7 @@ func (r *TunnelRouter) HostnameForTunnel(tunnelID string) string {
 }
 
 func (r *TunnelRouter) HostnameForLabel(tunnelID, label string) string {
-	agentID := strings.TrimPrefix(tunnelID, "t-")
-	return fmt.Sprintf("%s.%s.%s", label, agentID, r.domain)
+	return fmt.Sprintf("%s.%s", label, r.domain)
 }
 
 func (r *TunnelRouter) Register(tunnelID string) string {
