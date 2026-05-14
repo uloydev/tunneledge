@@ -234,7 +234,7 @@ func (g *Gateway) removeTunnel(tunnelID, reason string) {
 	log.Info().Str("tunnel_id", tunnelID).Str("reason", reason).Msg("tunnel removed")
 
 	if err := g.registryClient.DeregisterTunnel(tunnelID); err != nil {
-		log.Debug().Err(err).Str("tunnel_id", tunnelID).Msg("failed to deregister from registry")
+		log.Warn().Err(err).Str("tunnel_id", tunnelID).Msg("failed to deregister from registry")
 	}
 }
 

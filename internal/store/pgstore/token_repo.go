@@ -49,7 +49,9 @@ func (r *PGTokenRepository) List(ctx context.Context) (map[string]string, error)
 }
 
 func (r *PGTokenRepository) Delete(ctx context.Context, agentID string) error {
-	result := r.db.WithContext(ctx).Where("agent_id = ?", agentID).Delete(&TokenModel{})
+	// Unscoped performs a hard DELETE so the unique index on agent_id is
+	// freed immediately, allowing a new token to be inserted on rotation.
+	result := r.db.WithContext(ctx).Unscoped().Where("agent_id = ?", agentID).Delete(&TokenModel{})
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("token not found for agent %s", agentID)
 	}

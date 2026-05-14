@@ -28,7 +28,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     req.Name,
 	})
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	out, err := h.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -138,20 +138,5 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// writeServiceError maps domain errs.Code to HTTP status codes.
-func writeServiceError(w http.ResponseWriter, err error) {
-	switch errs.GetCode(err) {
-	case errs.CodeInvalidArg:
-		writeError(w, http.StatusBadRequest, err.Error())
-	case errs.CodeUnauthorized:
-		writeError(w, http.StatusUnauthorized, err.Error())
-	case errs.CodeForbidden:
-		writeError(w, http.StatusForbidden, err.Error())
-	case errs.CodeNotFound:
-		writeError(w, http.StatusNotFound, err.Error())
-	case errs.CodeAlreadyExists:
-		writeError(w, http.StatusConflict, err.Error())
-	default:
-		writeError(w, http.StatusInternalServerError, "internal server error")
-	}
-}
+// writeServiceError is defined in errors.go.
+

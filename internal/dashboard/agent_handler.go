@@ -35,7 +35,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	out, err := h.svc.Create(r.Context(), userID, req.Name, req.AgentID)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	agent, err := h.svc.Get(r.Context(), userID, id)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -120,7 +120,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	agent, err := h.svc.Update(r.Context(), userID, id, req.Name)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -147,7 +147,7 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.Delete(r.Context(), userID, id); err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -177,7 +177,7 @@ func (h *AgentHandler) RotateToken(w http.ResponseWriter, r *http.Request) {
 
 	out, err := h.svc.RotateToken(r.Context(), userID, uint(rawID))
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 

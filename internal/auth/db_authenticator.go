@@ -6,6 +6,7 @@ import (
 
 	"tunneledge/pkg/errs"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -42,6 +43,7 @@ func (a *DBTokenAuthenticator) Authenticate(token string) (string, error) {
 
 	hashes, err := a.store.ListTokenHashes(context.Background())
 	if err != nil {
+		log.Error().Err(err).Msg("failed to load token hashes for authentication")
 		return "", fmt.Errorf("failed to load tokens: %w", err)
 	}
 
@@ -51,5 +53,6 @@ func (a *DBTokenAuthenticator) Authenticate(token string) (string, error) {
 		}
 	}
 
+	log.Warn().Msg("authentication failed: no matching token hash")
 	return "", errs.New(errs.CodeUnauthorized, "invalid token")
 }

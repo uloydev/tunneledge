@@ -36,7 +36,7 @@ func (h *TunnelHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tunnel, err := h.svc.Create(r.Context(), userID, agentID, req.Label, req.LocalAddr)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *TunnelHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	tunnels, err := h.svc.List(r.Context(), userID, agentID)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *TunnelHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	tunnel, err := h.svc.Get(r.Context(), userID, agentID, tunnelID)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *TunnelHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	tunnel, err := h.svc.Update(r.Context(), userID, agentID, tunnelID, req.Label, req.LocalAddr)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 
@@ -157,7 +157,7 @@ func (h *TunnelHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.Delete(r.Context(), userID, agentID, tunnelID); err != nil {
-		writeServiceError(w, err)
+		writeServiceError(r, w, err)
 		return
 	}
 

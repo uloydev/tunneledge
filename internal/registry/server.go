@@ -73,6 +73,7 @@ func (s *Server) DeregisterTunnel(ctx context.Context, req *pb.DeregisterTunnelR
 func (s *Server) GetTunnel(ctx context.Context, req *pb.GetTunnelRequest) (*pb.GetTunnelResponse, error) {
 	sess, err := s.store.Get(ctx, req.TunnelId)
 	if err != nil {
+		log.Debug().Str("tunnel_id", req.TunnelId).Err(err).Msg("tunnel not found")
 		return nil, status.Errorf(codes.NotFound, "tunnel %s not found", req.TunnelId)
 	}
 
@@ -89,6 +90,7 @@ func (s *Server) GetTunnel(ctx context.Context, req *pb.GetTunnelRequest) (*pb.G
 func (s *Server) ListTunnels(ctx context.Context, req *pb.ListTunnelsRequest) (*pb.ListTunnelsResponse, error) {
 	sessions, err := s.store.List(ctx)
 	if err != nil {
+		log.Error().Err(err).Msg("failed to list tunnels")
 		return nil, status.Errorf(codes.Internal, "failed to list tunnels: %v", err)
 	}
 
@@ -109,6 +111,7 @@ func (s *Server) ListTunnels(ctx context.Context, req *pb.ListTunnelsRequest) (*
 
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	if err := s.store.Heartbeat(ctx, req.TunnelId); err != nil {
+		log.Warn().Str("tunnel_id", req.TunnelId).Err(err).Msg("heartbeat failed — session may have expired")
 		return &pb.HeartbeatResponse{Alive: false}, nil
 	}
 	return &pb.HeartbeatResponse{Alive: true}, nil

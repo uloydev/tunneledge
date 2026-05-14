@@ -169,12 +169,23 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
-		log.Info().
+
+		dur := time.Since(start)
+		evt := log.Info()
+		switch {
+		case wrapped.status >= 500:
+			evt = log.Error()
+		case wrapped.status >= 400:
+			evt = log.Warn()
+		}
+
+		evt.
 			Str("request_id", RequestIDFromContext(r.Context())).
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
+			Str("remote_addr", r.RemoteAddr).
 			Int("status", wrapped.status).
-			Dur("duration", time.Since(start)).
+			Dur("duration", dur).
 			Msg("http request")
 	})
 }
