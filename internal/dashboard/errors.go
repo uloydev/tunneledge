@@ -80,4 +80,3 @@ func writeServiceError(r *http.Request, w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
 }
-

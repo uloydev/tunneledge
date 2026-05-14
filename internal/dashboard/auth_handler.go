@@ -139,4 +139,3 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeServiceError is defined in errors.go.
-
