@@ -14,6 +14,6 @@ openssl req -x509 -newkey rsa:2048 \
   -days 365 \
   -nodes \
   -subj "/CN=tunneledge-dev" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1"
+  -addext "subjectAltName=DNS:localhost,DNS:gateway,DNS:*.localhost,IP:127.0.0.1,IP:::1"
 
 echo "Certificates generated in ${CERTS_DIR}/"

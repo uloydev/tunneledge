@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"tunneledge/internal/auth"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -76,12 +78,25 @@ func (s *Store) SeedDefaultTokens() error {
 		return nil
 	}
 
-	defaults := []Token{
-		{Token: "dev-token", AgentID: "agent-1"},
-		{Token: "dev-token-2", AgentID: "agent-2"},
+	type seed struct {
+		plaintext string
+		agentID   string
+	}
+	seeds := []seed{
+		{"dev-token", "agent-1"},
+		{"dev-token-2", "agent-2"},
 	}
 
-	return s.db.Create(&defaults).Error
+	var rows []Token
+	for _, s := range seeds {
+		hash, err := auth.HashToken(s.plaintext)
+		if err != nil {
+			return fmt.Errorf("failed to hash token for %s: %w", s.agentID, err)
+		}
+		rows = append(rows, Token{Token: hash, AgentID: s.agentID})
+	}
+
+	return s.db.Create(&rows).Error
 }
 
 func (s *Store) AddToken(token, agentID string) error {

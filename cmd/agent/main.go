@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"tunneledge/internal/agent"
-	"tunneledge/internal/tui"
+	agentui "tunneledge/internal/agent/tui"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -134,21 +135,76 @@ func runTUI() error {
 		return err
 	}
 
-	logr := logger.New(logger.Config{
-		Level:  cfg.Log.Level,
-		Format: "console",
+	tunnels, err := resolveTunnels(cfg, flagTunnels, flagLocalAddr)
+	if err != nil {
+		return err
+	}
+	cfg.Agent.Tunnels = tunnels
+
+	// Root context: the TUI model holds cancel() and calls it on quit,
+	// propagating shutdown through the errgroup to every QUIC stream.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Buffered event channel — transport goroutines MUST NOT block on UI.
+	// 512 slots give ~256 ms of headroom at 2 events/ms burst.
+	uiEvents := make(chan agent.AgentEvent, 512)
+
+	// Route all zerolog output into the TUI event channel so that no raw
+	// text leaks to the terminal while the alt-screen is active.
+	logr := logger.New(logger.Config{Level: cfg.Log.Level, Format: "json"})
+	log.Logger = logr.Output(agentui.NewEventLogWriter(uiEvents))
+
+	// Optional metrics server (runs independently of the TUI).
+	var metricsSrv *metrics.Server
+	if cfg.Observability.MetricsEnabled {
+		m := metrics.New("tunneledge")
+		metricsSrv = metrics.NewServer(cfg.Observability.MetricsAddr, m)
+		metricsSrv.Start()
+	}
+
+	// Start the QUIC engine in an errgroup so we can wait for all streams
+	// to drain before returning from runTUI.
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		a := agent.NewAgent(agent.Options{
+			GatewayAddr:       cfg.Agent.GatewayAddr,
+			Token:             cfg.Agent.Token,
+			Tunnels:           tunnels,
+			ReconnectDelay:    cfg.Agent.ReconnectDelay,
+			MaxReconnect:      cfg.Agent.MaxReconnect,
+			HeartbeatInterval: cfg.Agent.HeartbeatInterval,
+			TLSCAFile:         cfg.Agent.TLSCAFile,
+			TLSInsecure:       cfg.Agent.TLSInsecure,
+			EventCh:           uiEvents,
+		})
+		if err := a.Run(gctx); err != nil && gctx.Err() == nil {
+			log.Error().Err(err).Msg("agent stopped with error")
+		}
+		return nil
 	})
-	log.Logger = logr.Logger
 
-	app := tui.NewApp(cfg, flagConfig)
+	// Run the Bubble Tea program on the main goroutine (required by most
+	// terminal emulators for raw-mode input handling).
+	model := agentui.New(ctx, cancel, uiEvents)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, tuiErr := p.Run(); tuiErr != nil {
+		cancel()
+		_ = g.Wait()
+		return fmt.Errorf("TUI error: %w", tuiErr)
+	}
 
-	logWriter := app.Bridge().LogWriter()
-	log.Logger = logr.Output(logWriter)
+	// The TUI exited (user pressed q/Ctrl+C → cancel() already called).
+	// Block until the QUIC transport has cleanly closed every stream.
+	cancel()
+	if waitErr := g.Wait(); waitErr != nil && waitErr != context.Canceled {
+		return fmt.Errorf("agent shutdown error: %w", waitErr)
+	}
 
-	p := tea.NewProgram(app, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("TUI error: %w", err)
+	if metricsSrv != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = metricsSrv.Stop(shutdownCtx)
 	}
 
 	return nil
@@ -199,6 +255,8 @@ func runHeadless(cmd *cobra.Command, args []string) error {
 		ReconnectDelay:    cfg.Agent.ReconnectDelay,
 		MaxReconnect:      cfg.Agent.MaxReconnect,
 		HeartbeatInterval: cfg.Agent.HeartbeatInterval,
+		TLSCAFile:         cfg.Agent.TLSCAFile,
+		TLSInsecure:       cfg.Agent.TLSInsecure,
 		Metrics:           m,
 	})
 

@@ -266,13 +266,14 @@ func (g *Gateway) ActiveStreamCount() int {
 	return g.streamManager.Count()
 }
 
-func stripPort(addr string) string {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
+// publicPort extracts the port number from a listen address such as ":443"
+// or "0.0.0.0:443" for use in building public URLs.
+// If the address has no port or cannot be parsed, "443" is returned as a safe
+// default (the standard HTTPS/QUIC port).
+func publicPort(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return "443"
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		return "localhost"
-	}
-	return host
+	return port
 }

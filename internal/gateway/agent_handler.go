@@ -91,7 +91,7 @@ func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Con
 
 	tunnel := domain.NewTunnel(agentID, []domain.TunnelRoute{{Label: "default"}})
 	publicHost := g.router.Register(tunnel.ID.String())
-	publicURL := fmt.Sprintf("%s:%s", publicHost, stripPort(g.publicListenAddr))
+	publicURL := fmt.Sprintf("%s:%s", publicHost, publicPort(g.publicListenAddr))
 	tunnel.PublicHosts["default"] = publicURL
 
 	if err := transport.EncodeAuthResponse(qstream, transport.AuthStatusOK, tunnel.ID.String(), publicURL); err != nil {
@@ -142,7 +142,7 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 
 	for _, t := range authMsg.Tunnels {
 		hostname := g.router.RegisterLabel(tunnel.ID.String(), t.Label)
-		publicURL := fmt.Sprintf("%s:%s", hostname, stripPort(g.publicListenAddr))
+		publicURL := fmt.Sprintf("%s:%s", hostname, publicPort(g.publicListenAddr))
 		tunnel.PublicHosts[t.Label] = publicURL
 		hostEntries = append(hostEntries, transport.TunnelHostEntry{
 			Label:    t.Label,

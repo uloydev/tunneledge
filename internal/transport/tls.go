@@ -87,6 +87,10 @@ func generateWildcardCert(build certBuilder, baseDomain string) (*tls.Config, er
 		DNSNames: []string{
 			baseDomain,
 			"*." + baseDomain,
+			// Include common Docker service / container hostnames so that
+			// agents in the same Compose network can verify the certificate
+			// without requiring InsecureSkipVerify.
+			"gateway",
 		},
 	}
 
