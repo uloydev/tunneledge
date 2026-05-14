@@ -10,7 +10,7 @@ import (
 	"tunneledge/internal/auth"
 	"tunneledge/internal/gateway"
 	"tunneledge/internal/registry"
-	"tunneledge/internal/store"
+	"tunneledge/internal/store/pgstore"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
@@ -87,30 +87,20 @@ func main() {
 
 func resolveAuthenticator(cfg *config.Config) auth.Authenticator {
 	if cfg.DB.Driver == "postgres" && cfg.DB.DSN != "" {
-		dbStore, err := store.NewStore(cfg.DB.DSN)
+		db, err := pgstore.NewDB(cfg.DB.DSN)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to connect to database")
 		}
 
 		if cfg.DB.AutoMigrate {
-			if err := dbStore.AutoMigrate(); err != nil {
+			if err := pgstore.AutoMigrate(db); err != nil {
 				log.Fatal().Err(err).Msg("failed to run auto migrations")
 			}
 		}
 
-		if err := dbStore.SeedDefaultTokens(); err != nil {
-			log.Fatal().Err(err).Msg("failed to seed default tokens")
-		}
-
-		tokens, err := dbStore.LoadTokens()
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to load tokens from database")
-		}
-
-		log.Info().Int("token_count", len(tokens)).Msg("tokens loaded from database")
-
-		// Use hashed token authenticator — the loaded map is hash→agentID
-		return auth.NewHashedTokenAuthenticator(tokens)
+		tokenRepo := pgstore.NewPGTokenRepository(db)
+		log.Info().Msg("using database-backed token authenticator (agent_tokens table)")
+		return auth.NewDBTokenAuthenticator(tokenRepo)
 	}
 
 	log.Warn().Msg("using in-memory token store (no database configured)")
