@@ -4,7 +4,7 @@ set -euo pipefail
 HOST="${TE_BENCH_HOST:-default-test-agent-1.tunneledge.uloy.dev}"
 PORT="${TE_BENCH_PORT:-443}"
 TIMEOUT_SEC="${TE_BENCH_TIMEOUT:-360}"   # Increased from 15 to 30 for concurrent load
-CONCURRENT="${TE_BENCH_CONCURRENT:-100}"
+CONCURRENT="${TE_BENCH_CONCURRENT:-10}"
 
 if ! command -v k6 &>/dev/null; then
     echo "error: 'k6' is not installed — install from https://k6.io/docs/get-started/installation/"

@@ -13,10 +13,11 @@ service RegistryService {
 }
 
 message RegisterTunnelRequest {
-  string tunnel_id = 1;
-  string agent_id = 2;
-  string token = 3;
+  string tunnel_id  = 1;
+  string agent_id   = 2;
+  string token      = 3;
   string local_addr = 4;
+  string public_addr = 5;
 }
 
 message RegisterTunnelResponse {

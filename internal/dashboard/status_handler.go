@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"net/http"
+	"strings"
 
 	"tunneledge/internal/domain"
 )
@@ -76,4 +77,44 @@ func (h *StatusHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// DeleteSession disconnects a tunnel session. Only the owner of the agent may do this.
+func (h *StatusHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// TunnelID is everything after /api/v1/sessions/
+	tunnelID := strings.TrimPrefix(r.URL.Path, "/api/v1/sessions/")
+	tunnelID = strings.TrimSuffix(tunnelID, "/")
+	if tunnelID == "" {
+		writeError(w, http.StatusBadRequest, "tunnel_id required")
+		return
+	}
+
+	// Verify ownership: derive agentID from tunnelID format "t-{agentID}"
+	agentID := tunnelID
+	if len(tunnelID) > 2 && tunnelID[:2] == "t-" {
+		agentID = tunnelID[2:]
+	}
+
+	agent, err := h.agents.GetByAgentID(r.Context(), agentID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if agent.UserID != userID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	if err := h.sessions.Deregister(r.Context(), tunnelID); err != nil {
+		writeError(w, http.StatusNotFound, "session not found or already closed")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

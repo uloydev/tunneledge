@@ -105,6 +105,7 @@ func NewServer(opts ServerOptions) *Server {
 	// Status
 	mux.Handle("GET /api/v1/agents/{id}/status", authMw(http.HandlerFunc(statusHandler.AgentStatus)))
 	mux.Handle("GET /api/v1/sessions", authMw(http.HandlerFunc(statusHandler.ListSessions)))
+	mux.Handle("DELETE /api/v1/sessions/{tunnelID}", authMw(http.HandlerFunc(statusHandler.DeleteSession)))
 
 	// SSE — real-time event stream
 	mux.Handle("GET /api/v1/events", authMw(http.HandlerFunc(sseHandler.Stream)))

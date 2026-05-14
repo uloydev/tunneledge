@@ -22,6 +22,29 @@
     </div>
   </div>
 
+  <!-- Confirm disconnect modal -->
+  <div x-show="confirm.show" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="confirm.show = false">
+    <div class="absolute inset-0 bg-black/60" @click="confirm.show = false" x-transition.opacity></div>
+    <div class="relative bg-surface-800 border border-surface-700 rounded-xl p-6 w-full max-w-sm shadow-2xl" x-transition>
+      <div class="flex items-start gap-4 mb-5">
+        <div class="w-10 h-10 rounded-full shrink-0 bg-red-500/10 flex items-center justify-center">
+          <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-white">Disconnect Session</h3>
+          <p class="text-sm text-slate-400 mt-1">This will forcibly close the tunnel session for <span class="text-white font-mono" x-text="confirm.tunnelID"></span>. The agent will reconnect on its next retry.</p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3">
+        <button @click="confirm.show = false" class="px-4 py-2 text-sm text-slate-400 hover:text-white transition">Cancel</button>
+        <button @click="doDisconnect(confirm.tunnelID); confirm.show = false"
+                class="px-4 py-2 text-sm font-semibold rounded-lg bg-red-500 hover:bg-red-600 text-white transition">
+          Disconnect
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Sessions table -->
   <div class="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
     <template x-if="sessions.length === 0">
@@ -35,12 +58,13 @@
     <template x-if="sessions.length > 0">
       <div>
         <!-- Header (desktop) -->
-        <div class="hidden sm:grid grid-cols-5 gap-4 px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-surface-700">
+        <div class="hidden sm:grid grid-cols-6 gap-4 px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-surface-700">
           <span>Tunnel ID</span>
           <span>Agent</span>
-          <span>Public Address</span>
+          <span>Public URL</span>
           <span>Local Address</span>
           <span>Last Heartbeat</span>
+          <span></span>
         </div>
 
         <!-- Rows -->
@@ -48,22 +72,57 @@
           <template x-for="s in sessions" :key="s.tunnel_id">
             <div class="px-5 py-3.5 hover:bg-surface-700/30 transition">
               <!-- Desktop -->
-              <div class="hidden sm:grid grid-cols-5 gap-4 items-center">
+              <div class="hidden sm:grid grid-cols-6 gap-4 items-center">
                 <span class="text-sm font-mono text-brand-400 truncate" x-text="s.tunnel_id"></span>
                 <span class="text-sm text-white truncate" x-text="s.agent_id"></span>
-                <span class="text-sm font-mono text-slate-300 truncate" x-text="s.public_addr || '—'"></span>
+                <!-- Clickable public URL(s) -->
+                <div class="min-w-0">
+                  <template x-if="s.public_addr">
+                    <template x-for="(url, i) in parseURLs(s.public_addr)" :key="i">
+                      <a :href="'https://' + url.value"
+                         target="_blank"
+                         :title="url.label ? url.label + ' → ' + url.value : url.value"
+                         class="block text-sm font-mono text-emerald-400 hover:text-emerald-300 truncate transition">
+                        <span x-text="url.label ? url.label + ': ' + url.value : url.value"></span>
+                        <svg class="inline w-3 h-3 ml-1 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+                      </a>
+                    </template>
+                  </template>
+                  <template x-if="!s.public_addr">
+                    <span class="text-slate-500 text-sm">—</span>
+                  </template>
+                </div>
                 <span class="text-sm font-mono text-slate-400 truncate" x-text="s.local_addr || '—'"></span>
                 <span class="text-xs text-slate-500" x-text="timeAgo(s.last_heartbeat)"></span>
+                <!-- Disconnect button -->
+                <div class="flex justify-end">
+                  <button @click="confirm.show = true; confirm.tunnelID = s.tunnel_id"
+                          class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg border border-red-500/20 hover:border-red-500/40 transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9"/></svg>
+                    Disconnect
+                  </button>
+                </div>
               </div>
               <!-- Mobile -->
               <div class="sm:hidden space-y-1">
                 <div class="flex items-center justify-between">
                   <span class="text-sm font-mono text-brand-400" x-text="s.tunnel_id"></span>
-                  <span class="text-xs text-slate-500" x-text="timeAgo(s.last_heartbeat)"></span>
+                  <button @click="confirm.show = true; confirm.tunnelID = s.tunnel_id"
+                          class="text-red-400 hover:text-red-300 p-1 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9"/></svg>
+                  </button>
                 </div>
-                <div class="text-xs text-slate-400">
-                  <span x-text="s.agent_id"></span> · <span class="font-mono" x-text="s.public_addr || '—'"></span>
+                <div class="text-xs text-slate-400 space-y-0.5">
+                  <div x-text="s.agent_id"></div>
+                  <template x-if="s.public_addr">
+                    <template x-for="(url, i) in parseURLs(s.public_addr)" :key="i">
+                      <a :href="'https://' + url.value" target="_blank"
+                         class="block font-mono text-emerald-400 hover:text-emerald-300 truncate transition"
+                         x-text="url.value"></a>
+                    </template>
+                  </template>
                 </div>
+                <div class="text-xs text-slate-500" x-text="timeAgo(s.last_heartbeat)"></div>
               </div>
             </div>
           </template>
@@ -78,6 +137,7 @@ function sessionsPage() {
   return {
     sessions: [],
     sseConnected: false,
+    confirm: { show: false, tunnelID: '' },
     _es: null,
     _reconnectTimer: null,
 
@@ -116,6 +176,35 @@ function sessionsPage() {
     destroy() {
       if (this._es) { this._es.close(); this._es = null; }
       if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); }
+    },
+
+    async doDisconnect(tunnelID) {
+      try {
+        const res = await fetch(`/api/v1/sessions/${tunnelID}`, { method: 'DELETE' });
+        if (res.ok || res.status === 204) {
+          this.sessions = this.sessions.filter(s => s.tunnel_id !== tunnelID);
+          notify('Session disconnected', 'success');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          notify(data.error || 'Failed to disconnect session', 'error');
+        }
+      } catch {
+        notify('Network error', 'error');
+      }
+    },
+
+    // Parse public_addr which can be:
+    //   "label=host:port,label2=host2:port2" (v2 multi-tunnel)
+    //   "host:port" (v1 single tunnel)
+    parseURLs(addr) {
+      if (!addr) return [];
+      return addr.split(',').map(part => {
+        const eq = part.indexOf('=');
+        if (eq !== -1) {
+          return { label: part.slice(0, eq), value: part.slice(eq + 1) };
+        }
+        return { label: '', value: part };
+      });
     },
 
     timeAgo(ts) {

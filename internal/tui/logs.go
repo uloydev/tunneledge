@@ -212,10 +212,22 @@ func (l *LogsScreen) View() string {
 
 		timestamp := styles.Muted.Render(fmt.Sprintf("%-*s", timestampWidth, entry.Time.Format("15:04:05")))
 		level := levelStyle.Render(fmt.Sprintf("%-*s", levelWidth, strings.ToUpper(entry.Level)))
-		msg := levelStyle.Render(truncate(entry.Message, msgWidth))
 
-		rowLine := renderRow([]string{timestamp, level, msg}, widths)
-		b.WriteString("│ "+rowLine+" │\n")
+		// Word-wrap the message across multiple rows so it never overflows.
+		lines := wrapText(entry.Message, msgWidth)
+		for j, line := range lines {
+			msg := levelStyle.Render(fmt.Sprintf("%-*s", msgWidth, line))
+			if j == 0 {
+				rowLine := renderRow([]string{timestamp, level, msg}, widths)
+				b.WriteString("│ " + rowLine + " │\n")
+			} else {
+				// Continuation: blank timestamp+level, indented message.
+				blank := styles.Muted.Render(strings.Repeat(" ", timestampWidth))
+				blankLevel := styles.Muted.Render(strings.Repeat(" ", levelWidth))
+				rowLine := renderRow([]string{blank, blankLevel, msg}, widths)
+				b.WriteString("│ " + rowLine + " │\n")
+			}
+		}
 	}
 
 	b.WriteString(divider(tableWidth))
@@ -286,6 +298,60 @@ func (l *LogsScreen) tunnelIndex(label string) int {
 		}
 	}
 	return 0
+}
+
+// wrapText splits s into lines of at most maxLen runes, breaking at word
+// boundaries where possible. It never returns an empty slice.
+func wrapText(s string, maxLen int) []string {
+	if maxLen <= 0 {
+		return []string{s}
+	}
+	// Fast path: fits on one line.
+	if len([]rune(s)) <= maxLen {
+		return []string{s}
+	}
+
+	var lines []string
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	current := ""
+	for _, word := range words {
+		wordRunes := []rune(word)
+		// If a single word is longer than maxLen, hard-break it.
+		if len(wordRunes) > maxLen {
+			if current != "" {
+				lines = append(lines, current)
+				current = ""
+			}
+			for len(wordRunes) > 0 {
+				cut := maxLen
+				if cut > len(wordRunes) {
+					cut = len(wordRunes)
+				}
+				lines = append(lines, string(wordRunes[:cut]))
+				wordRunes = wordRunes[cut:]
+			}
+			continue
+		}
+		// Would adding this word overflow the current line?
+		sep := ""
+		if current != "" {
+			sep = " "
+		}
+		if len([]rune(current))+len(sep)+len(wordRunes) > maxLen {
+			lines = append(lines, current)
+			current = word
+		} else {
+			current = current + sep + word
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
 }
 
 func truncate(s string, maxLen int) string {

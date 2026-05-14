@@ -54,13 +54,15 @@ func (c *GRPCRegistryClient) Close() error {
 	return c.conn.Close()
 }
 
-func (c *GRPCRegistryClient) RegisterTunnel(tunnelID, agentID string) error {
+func (c *GRPCRegistryClient) RegisterTunnel(tunnelID, agentID, publicAddr, localAddr string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, err := c.client.RegisterTunnel(ctx, &pb.RegisterTunnelRequest{
-		TunnelId: tunnelID,
-		AgentId:  agentID,
+		TunnelId:   tunnelID,
+		AgentId:    agentID,
+		PublicAddr: publicAddr,
+		LocalAddr:  localAddr,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to register tunnel %s: %w", tunnelID, err)

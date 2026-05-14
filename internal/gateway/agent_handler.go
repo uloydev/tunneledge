@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"tunneledge/internal/domain"
@@ -38,13 +39,15 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 
 	var agentID string
 	var tunnelID string
+	var publicAddr string
+	var localAddr string
 
 	switch msgType {
 	case transport.MsgAuthV2:
-		agentID, tunnelID, err = g.handleV2Auth(qstream, conn, logger)
+		agentID, tunnelID, publicAddr, localAddr, err = g.handleV2Auth(qstream, conn, logger)
 	case transport.MsgAuth:
 		r := io.MultiReader(bytes.NewReader([]byte{transport.MsgAuth}), qstream)
-		agentID, tunnelID, err = g.handleV1Auth(r, qstream, conn, logger)
+		agentID, tunnelID, publicAddr, localAddr, err = g.handleV1Auth(r, qstream, conn, logger)
 	default:
 		logger.Error().Msgf("unexpected message type: 0x%02x", msgType)
 		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
@@ -57,7 +60,7 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 		return
 	}
 
-	if err := g.registryClient.RegisterTunnel(tunnelID, agentID); err != nil {
+	if err := g.registryClient.RegisterTunnel(tunnelID, agentID, publicAddr, localAddr); err != nil {
 		logger.Error().Err(err).Msg("failed to register tunnel with registry")
 		conn.CloseWithError(1, "registry error")
 		return
@@ -74,19 +77,19 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	g.agentStreamLoop(ctx, conn, tunnelID)
 }
 
-func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (string, string, error) {
+func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
 	authMsg, err := transport.DecodeAuth(r)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to decode auth message")
 		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
-		return "", "", err
+		return "", "", "", "", err
 	}
 
-	agentID, err := g.authenticator.Authenticate(authMsg.Token)
+	agentID, err = g.authenticator.Authenticate(authMsg.Token)
 	if err != nil {
 		logger.Warn().Err(err).Msg("authentication failed")
 		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
-		return "", "", err
+		return "", "", "", "", err
 	}
 
 	tunnel := domain.NewTunnel(agentID, []domain.TunnelRoute{{Label: "default"}})
@@ -97,7 +100,7 @@ func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Con
 	if err := transport.EncodeAuthResponse(qstream, transport.AuthStatusOK, tunnel.ID.String(), publicURL); err != nil {
 		logger.Error().Err(err).Msg("failed to send auth response")
 		g.router.Deregister(tunnel.ID.String())
-		return "", "", err
+		return "", "", "", "", err
 	}
 
 	g.addTunnel(tunnel, conn)
@@ -107,23 +110,23 @@ func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Con
 		Str("public_host", publicHost).
 		Msg("tunnel established (v1 legacy)")
 
-	return agentID, tunnel.ID.String(), nil
+	return agentID, tunnel.ID.String(), publicURL, "", nil
 }
 
-func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (string, string, error) {
+func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
 	r := io.MultiReader(bytes.NewReader([]byte{transport.MsgAuthV2}), qstream)
 	authMsg, err := transport.DecodeAuthV2(r)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to decode auth v2 message")
 		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
-		return "", "", err
+		return "", "", "", "", err
 	}
 
-	agentID, err := g.authenticator.Authenticate(authMsg.Token)
+	agentID, err = g.authenticator.Authenticate(authMsg.Token)
 	if err != nil {
 		logger.Warn().Err(err).Msg("authentication failed")
 		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
-		return "", "", err
+		return "", "", "", "", err
 	}
 
 	routes := make([]domain.TunnelRoute, 0, len(authMsg.Tunnels))
@@ -133,13 +136,15 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 		if err := domain.ValidateLabel(t.Label); err != nil {
 			logger.Warn().Str("label", t.Label).Err(err).Msg("invalid tunnel label")
 			_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
-			return "", "", fmt.Errorf("invalid label %q: %w", t.Label, err)
+			return "", "", "", "", fmt.Errorf("invalid label %q: %w", t.Label, err)
 		}
 		routes = append(routes, domain.TunnelRoute{Label: t.Label, LocalAddr: t.LocalAddr})
 	}
 
 	tunnel := domain.NewTunnel(agentID, routes)
 
+	var publicParts []string
+	var localParts []string
 	for _, t := range authMsg.Tunnels {
 		hostname := g.router.RegisterLabel(tunnel.ID.String(), t.Label)
 		publicURL := fmt.Sprintf("%s:%s", hostname, publicPort(g.publicListenAddr))
@@ -148,12 +153,16 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 			Label:    t.Label,
 			Hostname: publicURL,
 		})
+		publicParts = append(publicParts, t.Label+"="+publicURL)
+		if t.LocalAddr != "" {
+			localParts = append(localParts, t.Label+"="+t.LocalAddr)
+		}
 	}
 
 	if err := transport.EncodeAuthV2Response(qstream, transport.AuthStatusOK, tunnel.ID.String(), hostEntries); err != nil {
 		logger.Error().Err(err).Msg("failed to send auth v2 response")
 		g.router.DeregisterAll(tunnel.ID.String())
-		return "", "", err
+		return "", "", "", "", err
 	}
 
 	g.addTunnel(tunnel, conn)
@@ -163,7 +172,10 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 		Int("tunnel_count", len(authMsg.Tunnels)).
 		Msg("tunnel established (v2 multi-tunnel)")
 
-	return agentID, tunnel.ID.String(), nil
+	return agentID, tunnel.ID.String(),
+		strings.Join(publicParts, ","),
+		strings.Join(localParts, ","),
+		nil
 }
 
 func (g *Gateway) agentStreamLoop(ctx context.Context, conn *quic.Conn, tunnelID string) {

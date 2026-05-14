@@ -39,9 +39,10 @@ func (s *Server) RegisterTunnel(ctx context.Context, req *pb.RegisterTunnelReque
 	logger := log.With().Str("tunnel_id", req.TunnelId).Str("agent_id", req.AgentId).Logger()
 
 	sess := &domain.Session{
-		TunnelID:  req.TunnelId,
-		AgentID:   req.AgentId,
-		LocalAddr: req.LocalAddr,
+		TunnelID:   req.TunnelId,
+		AgentID:    req.AgentId,
+		LocalAddr:  req.LocalAddr,
+		PublicAddr: req.PublicAddr,
 	}
 
 	if err := s.store.Register(ctx, sess); err != nil {
@@ -53,7 +54,7 @@ func (s *Server) RegisterTunnel(ctx context.Context, req *pb.RegisterTunnelReque
 
 	return &pb.RegisterTunnelResponse{
 		TunnelId:   req.TunnelId,
-		PublicAddr: req.TunnelId,
+		PublicAddr: req.PublicAddr,
 	}, nil
 }
 

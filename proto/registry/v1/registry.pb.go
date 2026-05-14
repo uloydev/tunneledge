@@ -27,6 +27,7 @@ type RegisterTunnelRequest struct {
 	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Token         string                 `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
 	LocalAddr     string                 `protobuf:"bytes,4,opt,name=local_addr,json=localAddr,proto3" json:"local_addr,omitempty"`
+	PublicAddr    string                 `protobuf:"bytes,5,opt,name=public_addr,json=publicAddr,proto3" json:"public_addr,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -85,6 +86,13 @@ func (x *RegisterTunnelRequest) GetToken() string {
 func (x *RegisterTunnelRequest) GetLocalAddr() string {
 	if x != nil {
 		return x.LocalAddr
+	}
+	return ""
+}
+
+func (x *RegisterTunnelRequest) GetPublicAddr() string {
+	if x != nil {
+		return x.PublicAddr
 	}
 	return ""
 }
@@ -521,13 +529,15 @@ var File_proto_registry_v1_registry_proto protoreflect.FileDescriptor
 
 const file_proto_registry_v1_registry_proto_rawDesc = "" +
 	"\n" +
-	" proto/registry/v1/registry.proto\x12\x16tunneledge.registry.v1\"\x84\x01\n" +
+	" proto/registry/v1/registry.proto\x12\x16tunneledge.registry.v1\"\xa5\x01\n" +
 	"\x15RegisterTunnelRequest\x12\x1b\n" +
 	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05token\x18\x03 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
-	"local_addr\x18\x04 \x01(\tR\tlocalAddr\"V\n" +
+	"local_addr\x18\x04 \x01(\tR\tlocalAddr\x12\x1f\n" +
+	"\vpublic_addr\x18\x05 \x01(\tR\n" +
+	"publicAddr\"V\n" +
 	"\x16RegisterTunnelResponse\x12\x1b\n" +
 	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\x12\x1f\n" +
 	"\vpublic_addr\x18\x02 \x01(\tR\n" +
