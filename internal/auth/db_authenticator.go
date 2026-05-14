@@ -9,11 +9,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TokenLookup is the minimal interface the DBTokenAuthenticator needs from
-// the token store. Both pgstore.PGTokenRepository and any test double satisfy it.
+// TokenLookup is the minimal interface the DBTokenAuthenticator needs.
+// pgstore.PGAgentProfileRepository satisfies this via ListTokenHashes,
+// which reads from agent_profiles — the single authoritative token store.
 type TokenLookup interface {
-	// List returns all stored (tokenHash → agentID) pairs.
-	List(ctx context.Context) (map[string]string, error)
+	// ListTokenHashes returns all (bcryptHash → agentID) pairs.
+	ListTokenHashes(ctx context.Context) (map[string]string, error)
 }
 
 // DBTokenAuthenticator queries the token store on every authentication
@@ -39,7 +40,7 @@ func (a *DBTokenAuthenticator) Authenticate(token string) (string, error) {
 		return "", errs.New(errs.CodeUnauthorized, "empty token")
 	}
 
-	hashes, err := a.store.List(context.Background())
+	hashes, err := a.store.ListTokenHashes(context.Background())
 	if err != nil {
 		return "", fmt.Errorf("failed to load tokens: %w", err)
 	}

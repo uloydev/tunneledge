@@ -95,4 +95,20 @@ func modelToAgentProfile(m *AgentProfileModel) *domain.AgentProfile {
 	}
 }
 
+// ListTokenHashes returns a hash→agentID map from agent_profiles.
+// It is used by auth.DBTokenAuthenticator as the canonical token source.
+func (r *PGAgentProfileRepository) ListTokenHashes(ctx context.Context) (map[string]string, error) {
+	var models []AgentProfileModel
+	if err := r.db.WithContext(ctx).Select("agent_id", "token_hash").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("failed to list agent token hashes: %w", err)
+	}
+	result := make(map[string]string, len(models))
+	for _, m := range models {
+		if m.TokenHash != "" {
+			result[m.TokenHash] = m.AgentID
+		}
+	}
+	return result, nil
+}
+
 var _ domain.AgentProfileRepository = (*PGAgentProfileRepository)(nil)

@@ -98,8 +98,8 @@ func resolveAuthenticator(cfg *config.Config) auth.Authenticator {
 			}
 		}
 
-		tokenRepo := pgstore.NewPGTokenRepository(db)
-		log.Info().Msg("using database-backed token authenticator (agent_tokens table)")
+		tokenRepo := pgstore.NewPGAgentProfileRepository(db)
+		log.Info().Msg("using database-backed token authenticator (agent_profiles table)")
 		return auth.NewDBTokenAuthenticator(tokenRepo)
 	}
 
