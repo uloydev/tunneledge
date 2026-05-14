@@ -28,6 +28,20 @@ func (h *PageHandler) loadTemplates() {
 	layoutBytes, _ := templateFS.ReadFile("templates/layout.html")
 	layoutStr := string(layoutBytes)
 
+	// Standalone pages (no layout wrapper)
+	standalone := []string{"landing"}
+	for _, p := range standalone {
+		data, err := templateFS.ReadFile("templates/" + p + ".html")
+		if err != nil {
+			continue
+		}
+		tmpl, err := template.New(p).Parse(string(data))
+		if err != nil {
+			continue
+		}
+		h.templates[p] = tmpl
+	}
+
 	pages := []string{"login", "register", "dashboard"}
 	for _, p := range pages {
 		pageBytes, err := templateFS.ReadFile("templates/" + p + ".html")
@@ -79,6 +93,11 @@ type pageData struct {
 	CurrentPage string
 	Verified    bool
 	Error       string
+}
+
+func (h *PageHandler) LandingPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = h.render(w, "landing", nil)
 }
 
 func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {

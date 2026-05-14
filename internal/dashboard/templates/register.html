@@ -13,9 +13,6 @@
 
     <!-- Card -->
     <div class="bg-surface-800 border border-surface-700 rounded-xl p-8 shadow-xl" x-data="registerForm()">
-      <div id="reg-error" class="mb-4 hidden p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"></div>
-      <div id="reg-success" class="mb-4 hidden p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm text-center"></div>
-
       <form @submit.prevent="submit" class="space-y-5" x-show="!done" x-cloak>
         <div>
           <label for="name" class="block text-sm font-medium text-slate-300 mb-1.5">Name</label>
@@ -78,11 +75,8 @@ function registerForm() {
   return {
     name: '', email: '', password: '', confirm: '', loading: false, done: false, resending: false,
     async submit() {
-      const errEl = document.getElementById('reg-error');
-      errEl.classList.add('hidden');
       if (this.password !== this.confirm) {
-        errEl.textContent = 'Passwords do not match';
-        errEl.classList.remove('hidden');
+        notify('Passwords do not match', 'error');
         return;
       }
       this.loading = true;
@@ -94,14 +88,13 @@ function registerForm() {
         });
         const data = await res.json();
         if (!res.ok) {
-          errEl.textContent = data.error || 'Registration failed';
-          errEl.classList.remove('hidden');
+          notify(data.error || 'Registration failed', 'error');
           return;
         }
         this.done = true;
+        notify('Account created! Check your email for the verification link.', 'success', 6000);
       } catch {
-        errEl.textContent = 'Network error, please try again';
-        errEl.classList.remove('hidden');
+        notify('Network error, please try again', 'error');
       } finally { this.loading = false; }
     },
     async resend() {
@@ -112,8 +105,10 @@ function registerForm() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: this.email })
         });
-        window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Verification email resent', type: 'success' } }));
-      } catch {} finally { this.resending = false; }
+        notify('Verification email resent', 'success');
+      } catch {
+        notify('Failed to resend email', 'error');
+      } finally { this.resending = false; }
     }
   }
 }

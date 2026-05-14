@@ -19,12 +19,6 @@
       </div>
       {{end}}
 
-      {{if .Error}}
-      <div class="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center" x-show="errorMsg" x-text="errorMsg"></div>
-      {{end}}
-
-      <div id="login-error" class="mb-4 hidden p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"></div>
-
       <form @submit.prevent="submit" class="space-y-5">
         <div>
           <label for="email" class="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
@@ -61,8 +55,6 @@ function loginForm() {
     email: '', password: '', loading: false,
     async submit() {
       this.loading = true;
-      const errEl = document.getElementById('login-error');
-      errEl.classList.add('hidden');
       try {
         const res = await fetch('/api/v1/auth/login', {
           method: 'POST',
@@ -71,14 +63,13 @@ function loginForm() {
         });
         const data = await res.json();
         if (!res.ok) {
-          errEl.textContent = data.error || 'Invalid credentials';
-          errEl.classList.remove('hidden');
+          notify(data.error || 'Invalid credentials', 'error');
           return;
         }
-        window.location.href = '/dashboard';
+        notify('Welcome back!', 'success', 2000);
+        setTimeout(() => { window.location.href = '/dashboard'; }, 400);
       } catch {
-        errEl.textContent = 'Network error, please try again';
-        errEl.classList.remove('hidden');
+        notify('Network error, please try again', 'error');
       } finally { this.loading = false; }
     }
   }

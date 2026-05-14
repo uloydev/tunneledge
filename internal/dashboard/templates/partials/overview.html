@@ -1,8 +1,17 @@
-<!-- Overview partial loaded via HTMX -->
-<div class="space-y-6" x-data="overviewPage()" x-init="load()">
-  <div>
-    <h1 class="text-2xl font-bold text-white">Overview</h1>
-    <p class="text-slate-400 text-sm mt-1">Your TunnelEdge dashboard at a glance</p>
+<!-- Overview partial -->
+<div class="space-y-6" x-data="overviewPage()" x-init="init()">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Overview</h1>
+      <p class="text-slate-400 text-sm mt-1">Your TunnelEdge dashboard at a glance</p>
+    </div>
+    <!-- SSE connection indicator -->
+    <div class="flex items-center gap-2 text-xs"
+         :class="sseConnected ? 'text-emerald-400' : 'text-slate-500'">
+      <span class="w-2 h-2 rounded-full"
+            :class="sseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'"></span>
+      <span x-text="sseConnected ? 'Live' : 'Reconnecting…'"></span>
+    </div>
   </div>
 
   <!-- Stats grid -->
@@ -48,32 +57,28 @@
     </div>
   </div>
 
-  <!-- Agents list -->
+  <!-- Live sessions table -->
   <div class="bg-surface-800 border border-surface-700 rounded-xl">
     <div class="flex items-center justify-between px-5 py-4 border-b border-surface-700">
-      <h2 class="text-lg font-semibold text-white">Your Agents</h2>
-      <a href="/dashboard/agents" hx-get="/partials/agents" hx-target="#main-content" hx-push-url="/dashboard/agents"
+      <h2 class="text-lg font-semibold text-white">Active Sessions</h2>
+      <a href="/dashboard/sessions" hx-get="/partials/sessions" hx-target="#main-content" hx-push-url="/dashboard/sessions"
         class="text-sm text-brand-400 hover:text-brand-300">View all →</a>
     </div>
     <div class="divide-y divide-surface-700">
-      <template x-if="agents.length === 0">
+      <template x-if="sessions.length === 0">
         <div class="px-5 py-10 text-center text-slate-500">
-          <p class="text-sm">No agents yet. Create one to get started.</p>
-          <a href="/dashboard/agents" hx-get="/partials/agents" hx-target="#main-content" hx-push-url="/dashboard/agents"
-            class="inline-flex items-center gap-1.5 mt-3 text-sm text-brand-400 hover:text-brand-300">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-            Create Agent
-          </a>
+          <p class="text-sm">No active sessions. Connect an agent to see live data.</p>
         </div>
       </template>
-      <template x-for="a in agents" :key="a.id">
+      <template x-for="s in sessions" :key="s.tunnel_id">
         <div class="flex items-center gap-4 px-5 py-3.5 hover:bg-surface-700/30 transition">
-          <div class="w-2.5 h-2.5 rounded-full shrink-0" :class="a._online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.5)]' : 'bg-slate-600'"></div>
+          <div class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.5)] shrink-0"></div>
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-white truncate" x-text="a.name"></p>
-            <p class="text-xs text-slate-500 font-mono" x-text="a.agent_id"></p>
+            <p class="text-sm font-mono text-brand-400 truncate" x-text="s.tunnel_id"></p>
+            <p class="text-xs text-slate-500 mt-0.5 font-mono" x-text="(s.public_addr || '—')"></p>
           </div>
-          <span class="text-xs px-2 py-1 rounded-full" :class="a._online ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700 text-slate-400'" x-text="a._online ? 'Online' : 'Offline'"></span>
+          <span class="text-xs text-slate-400" x-text="s.agent_id"></span>
+          <span class="text-xs text-slate-500 shrink-0" x-text="timeAgo(s.last_heartbeat)"></span>
         </div>
       </template>
     </div>
@@ -84,35 +89,49 @@
 function overviewPage() {
   return {
     stats: { agents: 0, online: 0, tunnels: 0, sessions: 0 },
-    agents: [],
-    async load() {
-      try {
-        const [agentsRes, sessionsRes] = await Promise.all([
-          fetch('/api/v1/agents'),
-          fetch('/api/v1/sessions')
-        ]);
-        if (agentsRes.ok) {
-          this.agents = await agentsRes.json();
-          this.stats.agents = this.agents.length;
-          // Fetch tunnels per agent
-          let tunnelCount = 0;
-          for (const a of this.agents) {
-            try {
-              const tr = await fetch(`/api/v1/agents/${a.id}/tunnels`);
-              if (tr.ok) { const t = await tr.json(); tunnelCount += t.length; }
-            } catch {}
-          }
-          this.stats.tunnels = tunnelCount;
-        }
-        if (sessionsRes.ok) {
-          const sessions = await sessionsRes.json();
-          this.stats.sessions = sessions.length;
-          // Mark agents online
-          const onlineAgents = new Set(sessions.map(s => s.agent_id));
-          this.agents.forEach(a => { a._online = onlineAgents.has(a.agent_id); });
-          this.stats.online = onlineAgents.size;
-        }
-      } catch {}
+    sessions: [],
+    sseConnected: false,
+    _es: null,
+    _reconnectTimer: null,
+
+    init() {
+      this.connect();
+      // Clean up SSE when this partial is swapped out by HTMX.
+      this.$el.addEventListener('htmx:beforeSwap', () => this.destroy(), { once: true });
+    },
+
+    connect() {
+      if (this._es) { this._es.close(); }
+      this._es = new EventSource('/api/v1/events');
+
+      this._es.addEventListener('stats', (e) => {
+        this.stats = JSON.parse(e.data);
+        this.sseConnected = true;
+      });
+
+      this._es.addEventListener('sessions', (e) => {
+        this.sessions = JSON.parse(e.data);
+      });
+
+      this._es.onerror = () => {
+        this.sseConnected = false;
+        this._es.close();
+        // Reconnect after 5 s.
+        this._reconnectTimer = setTimeout(() => this.connect(), 5000);
+      };
+    },
+
+    destroy() {
+      if (this._es) { this._es.close(); this._es = null; }
+      if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); }
+    },
+
+    timeAgo(ts) {
+      if (!ts) return '—';
+      const diff = Math.floor(Date.now() / 1000 - ts);
+      if (diff < 60) return diff + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      return Math.floor(diff / 3600) + 'h ago';
     }
   }
 }

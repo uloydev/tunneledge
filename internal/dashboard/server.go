@@ -36,6 +36,7 @@ func NewServer(opts ServerOptions) *Server {
 	agentHandler := NewAgentHandler(opts.Agents, opts.Tokens, opts.Tunnels)
 	tunnelHandler := NewTunnelHandler(opts.Tunnels, opts.Agents)
 	statusHandler := NewStatusHandler(opts.Sessions, opts.Agents)
+	sseHandler := NewSSEHandler(opts.Sessions, opts.Agents, opts.Tunnels)
 	pageHandler := NewPageHandler()
 
 	mux := http.NewServeMux()
@@ -52,10 +53,8 @@ func NewServer(opts ServerOptions) *Server {
 	mux.HandleFunc("GET /partials/agents", requireCookie(opts.JWTCfg.Secret, pageHandler.Partial("agents")))
 	mux.HandleFunc("GET /partials/sessions", requireCookie(opts.JWTCfg.Secret, pageHandler.Partial("sessions")))
 
-	// Root redirect
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
-	})
+	// Root → landing page
+	mux.HandleFunc("GET /{$}", pageHandler.LandingPage)
 
 	// ── API routes ───────────────────────────────────────────
 	// Public (no auth)
@@ -107,6 +106,9 @@ func NewServer(opts ServerOptions) *Server {
 	mux.Handle("GET /api/v1/agents/{id}/status", authMw(http.HandlerFunc(statusHandler.AgentStatus)))
 	mux.Handle("GET /api/v1/sessions", authMw(http.HandlerFunc(statusHandler.ListSessions)))
 
+	// SSE — real-time event stream
+	mux.Handle("GET /api/v1/events", authMw(http.HandlerFunc(sseHandler.Stream)))
+
 	// Health
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -120,7 +122,7 @@ func NewServer(opts ServerOptions) *Server {
 			Addr:              opts.Addr,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
-			WriteTimeout:      30 * time.Second,
+			WriteTimeout:      0, // SSE connections are long-lived; per-handler timeouts apply
 			IdleTimeout:       60 * time.Second,
 		},
 		jwtCfg: opts.JWTCfg,

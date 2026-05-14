@@ -1,19 +1,30 @@
 <!-- Sessions partial loaded via HTMX -->
-<div class="space-y-6" x-data="sessionsPage()" x-init="load()">
+<div class="space-y-6" x-data="sessionsPage()" x-init="init()">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-white">Active Sessions</h1>
       <p class="text-slate-400 text-sm mt-1">Currently connected tunnel sessions</p>
     </div>
-    <button @click="load()" class="inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-white bg-surface-800 border border-surface-700 rounded-lg transition">
-      <svg class="w-4 h-4" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
-      Refresh
-    </button>
+    <!-- SSE status + manual reconnect -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 text-xs"
+           :class="sseConnected ? 'text-emerald-400' : 'text-amber-400'">
+        <span class="w-2 h-2 rounded-full"
+              :class="sseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"></span>
+        <span x-text="sseConnected ? 'Live' : 'Reconnecting…'"></span>
+      </div>
+      <button @click="reconnect()"
+              class="inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-white bg-surface-800 border border-surface-700 rounded-lg transition"
+              :class="!sseConnected && 'border-amber-500/40 text-amber-400 hover:text-amber-300'">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+        Reconnect
+      </button>
+    </div>
   </div>
 
   <!-- Sessions table -->
   <div class="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
-    <template x-if="sessions.length === 0 && !loading">
+    <template x-if="sessions.length === 0">
       <div class="px-5 py-16 text-center">
         <svg class="w-12 h-12 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
         <p class="text-slate-400 text-sm">No active sessions</p>
@@ -65,17 +76,51 @@
 <script>
 function sessionsPage() {
   return {
-    sessions: [], loading: true,
-    async load() {
-      this.loading = true;
-      try {
-        const res = await fetch('/api/v1/sessions');
-        if (res.ok) this.sessions = await res.json();
-      } catch {} finally { this.loading = false; }
+    sessions: [],
+    sseConnected: false,
+    _es: null,
+    _reconnectTimer: null,
+
+    init() {
+      this.connect();
+      this.$el.addEventListener('htmx:beforeSwap', () => this.destroy(), { once: true });
     },
+
+    connect() {
+      if (this._es) { this._es.close(); }
+      if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+
+      this._es = new EventSource('/api/v1/events');
+
+      this._es.addEventListener('sessions', (e) => {
+        this.sessions = JSON.parse(e.data);
+        this.sseConnected = true;
+      });
+
+      this._es.addEventListener('stats', () => {
+        this.sseConnected = true;
+      });
+
+      this._es.onerror = () => {
+        this.sseConnected = false;
+        this._es.close();
+        this._reconnectTimer = setTimeout(() => this.connect(), 5000);
+      };
+    },
+
+    reconnect() {
+      notify('Reconnecting…', 'info', 2000);
+      this.connect();
+    },
+
+    destroy() {
+      if (this._es) { this._es.close(); this._es = null; }
+      if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); }
+    },
+
     timeAgo(ts) {
       if (!ts) return '—';
-      const diff = Math.floor((Date.now() / 1000) - ts);
+      const diff = Math.floor(Date.now() / 1000 - ts);
       if (diff < 60) return diff + 's ago';
       if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
       return Math.floor(diff / 3600) + 'h ago';
