@@ -1,0 +1,276 @@
+<!-- Agents partial loaded via HTMX -->
+<div class="space-y-6" x-data="agentsPage()" x-init="load()">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Agents</h1>
+      <p class="text-slate-400 text-sm mt-1">Manage your tunnel agents and configurations</p>
+    </div>
+    <button @click="showCreate = true" class="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+      New Agent
+    </button>
+  </div>
+
+  <!-- Create Agent Modal -->
+  <div x-show="showCreate" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="showCreate = false">
+    <div class="absolute inset-0 bg-black/60" @click="showCreate = false" x-transition.opacity></div>
+    <div class="relative bg-surface-800 border border-surface-700 rounded-xl p-6 w-full max-w-md shadow-2xl" x-transition>
+      <h3 class="text-lg font-semibold text-white mb-4">Create New Agent</h3>
+      <form @submit.prevent="createAgent" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Agent Name</label>
+          <input type="text" x-model="newAgent.name" required
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition"
+            placeholder="My Web Server">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Agent ID</label>
+          <input type="text" x-model="newAgent.agent_id" required pattern="^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition font-mono"
+            placeholder="my-web-server">
+          <p class="text-xs text-slate-500 mt-1">Lowercase, numbers, hyphens. Used in tunnel URLs.</p>
+        </div>
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" @click="showCreate = false" class="px-4 py-2 text-sm text-slate-400 hover:text-white transition">Cancel</button>
+          <button type="submit" :disabled="creating" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition">
+            <span x-text="creating ? 'Creating…' : 'Create'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Token reveal modal -->
+  <div x-show="tokenRevealed" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60" @click="tokenRevealed = false" x-transition.opacity></div>
+    <div class="relative bg-surface-800 border border-surface-700 rounded-xl p-6 w-full max-w-lg shadow-2xl" x-transition>
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+          <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold text-white">Agent Token Created</h3>
+          <p class="text-sm text-slate-400">Save this token — it won't be shown again!</p>
+        </div>
+      </div>
+      <div class="bg-surface-900 border border-surface-700 rounded-lg p-4 font-mono text-sm text-brand-400 break-all select-all" x-text="revealedToken"></div>
+      <div class="flex justify-end gap-3 pt-4">
+        <button @click="copyToken()" class="px-4 py-2 text-sm text-brand-400 hover:text-brand-300 font-medium transition">Copy</button>
+        <button @click="tokenRevealed = false" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agents list -->
+  <div class="space-y-4">
+    <template x-if="agents.length === 0 && !loading">
+      <div class="bg-surface-800 border border-surface-700 rounded-xl px-5 py-16 text-center">
+        <svg class="w-12 h-12 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7"/></svg>
+        <p class="text-slate-400 text-sm">No agents configured yet.</p>
+        <p class="text-slate-500 text-xs mt-1">Create your first agent to start tunneling.</p>
+      </div>
+    </template>
+
+    <template x-for="a in agents" :key="a.id">
+      <div class="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
+        <div class="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-surface-700/30 transition" @click="a._expanded = !a._expanded">
+          <div class="w-2.5 h-2.5 rounded-full shrink-0" :class="a._online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.5)]' : 'bg-slate-600'"></div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-white" x-text="a.name"></p>
+            <p class="text-xs text-slate-500 font-mono mt-0.5" x-text="a.agent_id"></p>
+          </div>
+          <span class="hidden sm:inline text-xs px-2.5 py-1 rounded-full" :class="a._online ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/50 text-slate-500'" x-text="a._online ? 'Online' : 'Offline'"></span>
+          <svg class="w-5 h-5 text-slate-500 transition-transform" :class="a._expanded && 'rotate-180'" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+        </div>
+
+        <!-- Expanded detail -->
+        <div x-show="a._expanded" x-collapse x-cloak class="border-t border-surface-700 px-5 py-4 space-y-4">
+          <!-- Actions -->
+          <div class="flex flex-wrap gap-2">
+            <button @click="showTunnelModal(a)" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-500/10 text-brand-400 hover:bg-brand-500/20 text-xs font-medium rounded-lg transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+              Add Tunnel
+            </button>
+            <button @click="rotateToken(a)" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-medium rounded-lg transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+              Rotate Token
+            </button>
+            <button @click="deleteAgent(a)" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-medium rounded-lg transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+              Delete
+            </button>
+          </div>
+
+          <!-- Tunnels -->
+          <div>
+            <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Tunnel Configurations</h4>
+            <div class="space-y-2">
+              <template x-if="!a._tunnels || a._tunnels.length === 0">
+                <p class="text-xs text-slate-500 italic">No tunnel configurations</p>
+              </template>
+              <template x-for="t in (a._tunnels || [])" :key="t.id">
+                <div class="flex items-center justify-between bg-surface-900 rounded-lg px-4 py-2.5">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="inline-block w-2 h-2 rounded-full bg-brand-400 shrink-0"></span>
+                    <span class="text-sm font-mono text-white truncate" x-text="t.label"></span>
+                    <svg class="w-4 h-4 text-slate-600 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+                    <span class="text-sm font-mono text-slate-400 truncate" x-text="t.local_addr"></span>
+                  </div>
+                  <button @click="deleteTunnel(a, t)" class="text-slate-600 hover:text-red-400 transition ml-2 shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Add Tunnel Modal -->
+  <div x-show="showTunnel" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="showTunnel = false">
+    <div class="absolute inset-0 bg-black/60" @click="showTunnel = false" x-transition.opacity></div>
+    <div class="relative bg-surface-800 border border-surface-700 rounded-xl p-6 w-full max-w-md shadow-2xl" x-transition>
+      <h3 class="text-lg font-semibold text-white mb-4">Add Tunnel Configuration</h3>
+      <form @submit.prevent="createTunnel" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Label</label>
+          <input type="text" x-model="newTunnel.label" required pattern="^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$"
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition font-mono"
+            placeholder="web">
+          <p class="text-xs text-slate-500 mt-1">Becomes part of the public URL: <span class="text-brand-400" x-text="(newTunnel.label || 'label') + '-' + (tunnelAgent?.agent_id || 'agent') + '.tunneledge.dev'"></span></p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Local Address</label>
+          <input type="text" x-model="newTunnel.local_addr" required
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition font-mono"
+            placeholder="localhost:3000">
+        </div>
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" @click="showTunnel = false" class="px-4 py-2 text-sm text-slate-400 hover:text-white transition">Cancel</button>
+          <button type="submit" :disabled="creatingTunnel" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition">
+            <span x-text="creatingTunnel ? 'Adding…' : 'Add Tunnel'"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function agentsPage() {
+  return {
+    agents: [], loading: true,
+    showCreate: false, creating: false,
+    newAgent: { name: '', agent_id: '' },
+    tokenRevealed: false, revealedToken: '',
+    showTunnel: false, creatingTunnel: false,
+    tunnelAgent: null,
+    newTunnel: { label: '', local_addr: '' },
+
+    async load() {
+      this.loading = true;
+      try {
+        const [agentsRes, sessionsRes] = await Promise.all([
+          fetch('/api/v1/agents'), fetch('/api/v1/sessions')
+        ]);
+        if (agentsRes.ok) {
+          this.agents = (await agentsRes.json()).map(a => ({...a, _expanded: false, _tunnels: [], _online: false}));
+          // Load tunnels per agent
+          for (const a of this.agents) {
+            try {
+              const tr = await fetch(`/api/v1/agents/${a.id}/tunnels`);
+              if (tr.ok) a._tunnels = await tr.json();
+            } catch {}
+          }
+        }
+        if (sessionsRes.ok) {
+          const sessions = await sessionsRes.json();
+          const onlineAgents = new Set(sessions.map(s => s.agent_id));
+          this.agents.forEach(a => { a._online = onlineAgents.has(a.agent_id); });
+        }
+      } catch {} finally { this.loading = false; }
+    },
+
+    async createAgent() {
+      this.creating = true;
+      try {
+        const res = await fetch('/api/v1/agents', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newAgent)
+        });
+        const data = await res.json();
+        if (!res.ok) { window.dispatchEvent(new CustomEvent('notify', { detail: { message: data.error, type: 'error' } })); return; }
+        this.revealedToken = data.token;
+        this.tokenRevealed = true;
+        this.showCreate = false;
+        this.newAgent = { name: '', agent_id: '' };
+        await this.load();
+        window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Agent created successfully', type: 'success' } }));
+      } catch { window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Failed to create agent', type: 'error' } })); }
+      finally { this.creating = false; }
+    },
+
+    async rotateToken(agent) {
+      if (!confirm(`Rotate token for "${agent.name}"? The old token will stop working immediately.`)) return;
+      try {
+        const res = await fetch(`/api/v1/agents/${agent.id}/rotate-token`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) { window.dispatchEvent(new CustomEvent('notify', { detail: { message: data.error, type: 'error' } })); return; }
+        this.revealedToken = data.token;
+        this.tokenRevealed = true;
+        window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Token rotated', type: 'success' } }));
+      } catch { window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Failed to rotate token', type: 'error' } })); }
+    },
+
+    async deleteAgent(agent) {
+      if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+      try {
+        const res = await fetch(`/api/v1/agents/${agent.id}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 204) { window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Failed to delete', type: 'error' } })); return; }
+        this.agents = this.agents.filter(a => a.id !== agent.id);
+        window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Agent deleted', type: 'success' } }));
+      } catch { window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Failed to delete agent', type: 'error' } })); }
+    },
+
+    showTunnelModal(agent) {
+      this.tunnelAgent = agent;
+      this.newTunnel = { label: '', local_addr: '' };
+      this.showTunnel = true;
+    },
+
+    async createTunnel() {
+      this.creatingTunnel = true;
+      try {
+        const res = await fetch(`/api/v1/agents/${this.tunnelAgent.id}/tunnels`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newTunnel)
+        });
+        const data = await res.json();
+        if (!res.ok) { window.dispatchEvent(new CustomEvent('notify', { detail: { message: data.error, type: 'error' } })); return; }
+        this.tunnelAgent._tunnels = [...(this.tunnelAgent._tunnels || []), data];
+        this.showTunnel = false;
+        window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Tunnel added', type: 'success' } }));
+      } catch { window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Failed to add tunnel', type: 'error' } })); }
+      finally { this.creatingTunnel = false; }
+    },
+
+    async deleteTunnel(agent, tunnel) {
+      if (!confirm(`Delete tunnel "${tunnel.label}"?`)) return;
+      try {
+        const res = await fetch(`/api/v1/agents/${agent.id}/tunnels/${tunnel.id}`, { method: 'DELETE' });
+        if (res.ok || res.status === 204) {
+          agent._tunnels = agent._tunnels.filter(t => t.id !== tunnel.id);
+          window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Tunnel deleted', type: 'success' } }));
+        }
+      } catch { window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Failed to delete tunnel', type: 'error' } })); }
+    },
+
+    copyToken() {
+      navigator.clipboard.writeText(this.revealedToken);
+      window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Token copied to clipboard', type: 'success' } }));
+    }
+  }
+}
+</script>

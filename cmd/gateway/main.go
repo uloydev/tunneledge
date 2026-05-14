@@ -33,7 +33,7 @@ func main() {
 
 	authenticator := resolveAuthenticator(cfg)
 
-	registryClient, err := registry.NewGRPCRegistryClient(cfg.Gateway.RegistryAddr)
+	registryClient, err := registry.NewGRPCRegistryClient(cfg.Gateway.RegistryAddr, cfg.Gateway.GRPCAuthToken)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to registry")
 	}
@@ -108,7 +108,9 @@ func resolveAuthenticator(cfg *config.Config) auth.Authenticator {
 		}
 
 		log.Info().Int("token_count", len(tokens)).Msg("tokens loaded from database")
-		return auth.NewTokenAuthenticator(tokens)
+
+		// Use hashed token authenticator — the loaded map is hash→agentID
+		return auth.NewHashedTokenAuthenticator(tokens)
 	}
 
 	log.Warn().Msg("using in-memory token store (no database configured)")

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
 	"time"
 )
 
@@ -44,6 +45,24 @@ func ClientTLSConfig() *tls.Config {
 	}
 }
 
+func ClientTLSConfigWithCA(caFile string) (*tls.Config, error) {
+	caCert, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA cert: %w", err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse CA cert")
+	}
+
+	return &tls.Config{
+		RootCAs:    pool,
+		NextProtos: []string{"tunneledge"},
+		MinVersion: tls.VersionTLS13,
+	}, nil
+}
+
 type certBuilder func(tls.Certificate) *tls.Config
 
 func generateWildcardCert(build certBuilder, baseDomain string) (*tls.Config, error) {
@@ -68,6 +87,10 @@ func generateWildcardCert(build certBuilder, baseDomain string) (*tls.Config, er
 		DNSNames: []string{
 			baseDomain,
 			"*." + baseDomain,
+			// Include common Docker service / container hostnames so that
+			// agents in the same Compose network can verify the certificate
+			// without requiring InsecureSkipVerify.
+			"gateway",
 		},
 	}
 

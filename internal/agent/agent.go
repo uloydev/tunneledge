@@ -2,11 +2,13 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"math"
 	"math/rand/v2"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"tunneledge/internal/relay"
@@ -27,11 +29,21 @@ type Agent struct {
 	reconnectDelay    time.Duration
 	maxReconnect      int
 	heartbeatInterval time.Duration
+	tlsCAFile         string
+	tlsInsecure       bool
 
-	mu        sync.RWMutex
-	conn      *quic.Conn
-	tunnelID  string
-	publicURLs map[string]string
+	mu          sync.RWMutex
+	conn        *quic.Conn
+	tunnelID    string
+	publicURLs  map[string]string
+	reconnectCh chan struct{}
+
+	// Event emission — nil when running headless.
+	eventCh chan<- AgentEvent
+
+	// Atomic bandwidth counters updated from relay goroutines.
+	rxTotal atomic.Int64
+	txTotal atomic.Int64
 }
 
 type Options struct {
@@ -42,6 +54,12 @@ type Options struct {
 	MaxReconnect      int
 	HeartbeatInterval time.Duration
 	Metrics           *metrics.Metrics
+	TLSCAFile         string
+	TLSInsecure       bool
+
+	// EventCh is an optional buffered channel for broadcasting AgentEvents to the TUI.
+	// If nil, all event emission is skipped (headless mode).
+	EventCh chan<- AgentEvent
 }
 
 func NewAgent(opts Options) *Agent {
@@ -60,10 +78,57 @@ func NewAgent(opts Options) *Agent {
 		heartbeatInterval: opts.HeartbeatInterval,
 		metrics:           opts.Metrics,
 		publicURLs:        make(map[string]string),
+		tlsCAFile:         opts.TLSCAFile,
+		tlsInsecure:       opts.TLSInsecure,
+		reconnectCh:       make(chan struct{}, 1),
+		eventCh:           opts.EventCh,
+	}
+}
+
+// emitEvent sends ev to the TUI event channel without blocking.
+// If the channel buffer is full the event is silently dropped so that
+// the transport layer is never stalled by a slow UI render.
+func (a *Agent) emitEvent(ev AgentEvent) {
+	if a.eventCh == nil {
+		return
+	}
+	select {
+	case a.eventCh <- ev:
+	default:
+	}
+}
+
+// telemetryLoop emits TelemetryTickEvents at 500 ms intervals by computing
+// incremental deltas from the atomic byte counters.
+func (a *Agent) telemetryLoop(ctx context.Context) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastRx, lastTx int64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			curRx := a.rxTotal.Load()
+			curTx := a.txTotal.Load()
+			rxDelta := curRx - lastRx
+			txDelta := curTx - lastTx
+			lastRx = curRx
+			lastTx = curTx
+			a.emitEvent(TelemetryTickEvent{
+				RxDelta: uint64(rxDelta),
+				TxDelta: uint64(txDelta),
+			})
+		}
 	}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
+	if a.eventCh != nil {
+		go a.telemetryLoop(ctx)
+	}
+
 	attempts := 0
 	delay := a.reconnectDelay
 	maxRetries := a.maxReconnect
@@ -71,10 +136,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			a.emitEvent(StatusUpdateEvent{Status: "Disconnected"})
 			return ctx.Err()
 		default:
 		}
 
+		a.emitEvent(StatusUpdateEvent{Status: "Connecting"})
 		err := a.connect(ctx)
 		if err == nil {
 			attempts = 0
@@ -103,8 +170,11 @@ func (a *Agent) Run(ctx context.Context) error {
 			Dur("retry_after", waitTime).
 			Msg("connection lost, reconnecting")
 
+		a.emitEvent(StatusUpdateEvent{Status: "Reconnecting"})
+
 		select {
 		case <-ctx.Done():
+			a.emitEvent(StatusUpdateEvent{Status: "Disconnected"})
 			return ctx.Err()
 		case <-time.After(waitTime):
 		}
@@ -114,7 +184,20 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) connect(ctx context.Context) error {
-	tlsCfg := transport.ClientTLSConfig()
+	var tlsCfg *tls.Config
+
+	if a.tlsCAFile != "" {
+		var err error
+		tlsCfg, err = transport.ClientTLSConfigWithCA(a.tlsCAFile)
+		if err != nil {
+			return fmt.Errorf("load TLS CA: %w", err)
+		}
+	} else {
+		tlsCfg = transport.ClientTLSConfig()
+		if !a.tlsInsecure {
+			tlsCfg.InsecureSkipVerify = false
+		}
+	}
 
 	conn, err := transport.QUICDial(ctx, a.gatewayAddr, tlsCfg)
 	if err != nil {
@@ -177,6 +260,8 @@ func (a *Agent) authenticateV1(ctx context.Context, conn *quic.Conn, authStream 
 		Str("public_url", authResp.PublicURL).
 		Msg("authenticated with gateway (v1)")
 
+	a.emitEvent(StatusUpdateEvent{Status: "Connected", Endpoint: authResp.PublicURL})
+
 	if a.metrics != nil {
 		a.metrics.ActiveTunnels.Inc()
 		a.metrics.TunnelCreated.WithLabelValues("success").Inc()
@@ -223,6 +308,13 @@ func (a *Agent) authenticateV2(ctx context.Context, conn *quic.Conn, authStream 
 		Str("tunnel_id", authResp.TunnelID).
 		Int("tunnel_count", len(authResp.Tunnels)).
 		Msg("authenticated with gateway (v2 multi-tunnel)")
+
+	// Emit the first registered public URL as the primary endpoint.
+	primaryEndpoint := ""
+	if len(authResp.Tunnels) > 0 {
+		primaryEndpoint = authResp.Tunnels[0].Hostname
+	}
+	a.emitEvent(StatusUpdateEvent{Status: "Connected", Endpoint: primaryEndpoint})
 
 	if a.metrics != nil {
 		a.metrics.ActiveTunnels.Inc()
@@ -279,10 +371,21 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 	logger = logger.With().Str("label", label).Str("local_addr", localAddr).Logger()
 	logger.Info().Msg("incoming stream from gateway")
 
+	a.emitEvent(StreamOpenedEvent{
+		StreamID:  streamID,
+		Label:     label,
+		LocalAddr: localAddr,
+	})
+
 	tcpConn, err := net.DialTimeout("tcp", localAddr, 10*time.Second)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to connect to local service")
 		qstream.Close()
+		a.emitEvent(StreamClosedEvent{
+			StreamID: streamID,
+			Label:    label,
+			Reason:   err.Error(),
+		})
 		return
 	}
 	defer tcpConn.Close()
@@ -291,15 +394,39 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 		a.metrics.ActiveStreams.Inc()
 	}
 
-	result, _ := relay.Bidirectional(ctx, qstream, tcpConn)
+	// BidirectionalWithCallback tracks per-stream bytes and accumulates into
+	// the agent's atomic totals so the telemetry loop can compute deltas.
+	result, relayErr := relay.BidirectionalWithCallback(ctx, qstream, tcpConn, func(direction string, n int) {
+		switch direction {
+		case "sent": // qstream → tcpConn (data received from gateway)
+			a.rxTotal.Add(int64(n))
+		case "received": // tcpConn → qstream (data sent to gateway)
+			a.txTotal.Add(int64(n))
+		}
+	})
+	if relayErr != nil {
+		logger.Debug().Err(relayErr).Msg("relay ended with error")
+	}
 
 	if a.metrics != nil {
 		a.metrics.ActiveStreams.Dec()
-		a.metrics.BytesForwarded.WithLabelValues("sent", tunnelID).Add(float64(result.Stats.GetSent()))
-		a.metrics.BytesForwarded.WithLabelValues("received", tunnelID).Add(float64(result.Stats.GetReceived()))
+		a.metrics.BytesForwarded.WithLabelValues("sent").Add(float64(result.Stats.GetSent()))
+		a.metrics.BytesForwarded.WithLabelValues("received").Add(float64(result.Stats.GetReceived()))
 	}
 
 	logger.Info().Int64("sent", result.Stats.GetSent()).Int64("received", result.Stats.GetReceived()).Msg("stream closed")
+
+	reason := "clean"
+	if relayErr != nil {
+		reason = relayErr.Error()
+	}
+	a.emitEvent(StreamClosedEvent{
+		StreamID:      streamID,
+		Label:         label,
+		Reason:        reason,
+		SentBytes:     result.Stats.GetSent(),
+		ReceivedBytes: result.Stats.GetReceived(),
+	})
 }
 
 func (a *Agent) heartbeatLoop(ctx context.Context) {

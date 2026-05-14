@@ -1,105 +1,11 @@
 package domain
 
 import (
-	"sync"
 	"testing"
 	"time"
 
-	"tunneledge/pkg/errs"
-
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-func TestMemorySessionRepository_RegisterGet(t *testing.T) {
-	repo := NewMemorySessionRepository()
-
-	sess := &Session{
-		TunnelID: "t-1",
-		AgentID:  "agent-1",
-	}
-
-	err := repo.Register(sess)
-	require.NoError(t, err)
-
-	got, err := repo.Get("t-1")
-	require.NoError(t, err)
-	assert.Equal(t, "t-1", got.TunnelID)
-	assert.Equal(t, "agent-1", got.AgentID)
-	assert.False(t, got.CreatedAt.IsZero())
-}
-
-func TestMemorySessionRepository_RegisterDuplicate(t *testing.T) {
-	repo := NewMemorySessionRepository()
-
-	sess := &Session{TunnelID: "t-1"}
-	require.NoError(t, repo.Register(sess))
-
-	err := repo.Register(&Session{TunnelID: "t-1"})
-	assert.Error(t, err)
-	assert.Equal(t, errs.CodeAlreadyExists, errs.GetCode(err))
-}
-
-func TestMemorySessionRepository_Deregister(t *testing.T) {
-	repo := NewMemorySessionRepository()
-	require.NoError(t, repo.Register(&Session{TunnelID: "t-1"}))
-
-	require.NoError(t, repo.Deregister("t-1"))
-
-	_, err := repo.Get("t-1")
-	assert.Error(t, err)
-	assert.Equal(t, errs.CodeNotFound, errs.GetCode(err))
-}
-
-func TestMemorySessionRepository_List(t *testing.T) {
-	repo := NewMemorySessionRepository()
-	require.NoError(t, repo.Register(&Session{TunnelID: "t-1"}))
-	require.NoError(t, repo.Register(&Session{TunnelID: "t-2"}))
-
-	list := repo.List()
-	assert.Len(t, list, 2)
-}
-
-func TestMemorySessionRepository_Heartbeat(t *testing.T) {
-	repo := NewMemorySessionRepository()
-	require.NoError(t, repo.Register(&Session{TunnelID: "t-1"}))
-
-	sess, _ := repo.Get("t-1")
-	sess.LastHeartbeat = time.Now().Add(-1 * time.Hour)
-
-	require.NoError(t, repo.Heartbeat("t-1"))
-
-	after, _ := repo.Get("t-1")
-	assert.WithinDuration(t, time.Now(), after.LastHeartbeat, 2*time.Second)
-}
-
-func TestMemorySessionRepository_CleanupExpired(t *testing.T) {
-	repo := NewMemorySessionRepository()
-	require.NoError(t, repo.Register(&Session{TunnelID: "t-1"}))
-
-	sess, _ := repo.Get("t-1")
-	sess.LastHeartbeat = time.Now().Add(-10 * time.Minute)
-
-	expired := repo.CleanupExpired(5 * time.Minute)
-	assert.Equal(t, 1, expired)
-	assert.Empty(t, repo.List())
-}
-
-func TestMemorySessionRepository_ConcurrentAccess(t *testing.T) {
-	repo := NewMemorySessionRepository()
-	var wg sync.WaitGroup
-
-	for i := range 100 {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_ = repo.Register(&Session{TunnelID: string(rune(i))})
-		}(i)
-	}
-
-	wg.Wait()
-	assert.Len(t, repo.List(), 100)
-}
 
 func TestNewSession(t *testing.T) {
 	sess := NewSession("t-1", "agent-1", "localhost:3000")

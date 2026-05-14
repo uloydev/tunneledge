@@ -11,6 +11,7 @@ import (
 	"tunneledge/internal/domain"
 	"tunneledge/internal/registry"
 	"tunneledge/internal/store"
+	"tunneledge/internal/store/memstore"
 	"tunneledge/internal/store/pgstore"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
@@ -46,7 +47,7 @@ func main() {
 		metricsSrv.Start()
 	}
 
-	grpcSrv := registry.NewGRPCServer()
+	grpcSrv := registry.NewGRPCServer(cfg.Registry.GRPCAuthToken)
 	pb.RegisterRegistryServiceServer(grpcSrv, srv)
 
 	lis, err := net.Listen("tcp", cfg.Registry.GRPCListenAddr)
@@ -106,5 +107,5 @@ func resolveSessionStore(cfg *config.Config) domain.SessionRepository {
 	}
 
 	log.Warn().Msg("using in-memory session store")
-	return domain.NewMemorySessionRepository()
+	return memstore.NewMemorySessionRepository()
 }

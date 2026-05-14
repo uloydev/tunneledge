@@ -65,6 +65,54 @@ services:
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tunneledge
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "18025:8025"
+      - "11025:1025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tunneledge
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.dashboard
+    ports:
+      - "8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    environment:
+      - TE_HTTP_LISTEN_ADDR=:8080
+      - TE_JWT_SECRET=change-me-in-production
+      - TE_JWT_TTL=24h
+      - TE_BASE_URL=http://localhost:8082
+      - TE_SMTP_HOST=mailpit
+      - TE_SMTP_PORT=1025
+      - TE_SMTP_FROM=noreply@tunneledge.dev
+      - TE_LOG_LEVEL=info
+      - TE_LOG_FORMAT=json
+      - TE_DB_DRIVER=postgres
+      - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
+      - TE_DB_AUTO_MIGRATE=true
     networks:
       - tunneledge
 
@@ -73,11 +121,13 @@ services:
       context: ../..
       dockerfile: deployments/docker/Dockerfile.agent
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
     environment:
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
     command:
+      - headless
       - --gateway-addr=gateway:4433
       - --token=dev-token
       # - --tunnel=web=echo:6666

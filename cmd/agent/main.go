@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"tunneledge/internal/agent"
+	agentui "tunneledge/internal/agent/tui"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -27,6 +30,7 @@ var (
 	flagLogLevel    string
 	flagLogFormat   string
 	flagMetricsAddr string
+	flagHeadless    bool
 )
 
 func main() {
@@ -34,19 +38,37 @@ func main() {
 		Use:   "tunneledge-agent",
 		Short: "TunnelEdge Agent — Expose local TCP services via QUIC tunnel",
 		Long:  "TunnelEdge Agent connects to a TunnelEdge Gateway via QUIC and relays traffic to local TCP services.",
-		RunE:  runAgent,
+		RunE:  runRoot,
+	}
+
+	headlessCmd := &cobra.Command{
+		Use:   "headless",
+		Short: "Run agent in headless mode (for deployment/CI)",
+		RunE:  runHeadless,
 	}
 
 	rootCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "config file path")
 	rootCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
-	rootCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token (required)")
+	rootCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token")
 	rootCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
 	rootCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
 	rootCmd.Flags().StringVar(&flagLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	rootCmd.Flags().StringVar(&flagLogFormat, "log-format", "", "log format: json, console")
 	rootCmd.Flags().StringVar(&flagMetricsAddr, "metrics-addr", "", "metrics server address")
+	rootCmd.Flags().BoolVar(&flagHeadless, "headless", false, "run in headless mode (no TUI)")
 
-	_ = rootCmd.MarkFlagRequired("token")
+	headlessCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "config file path")
+	headlessCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
+	headlessCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token (required)")
+	headlessCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
+	headlessCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
+	headlessCmd.Flags().StringVar(&flagLogLevel, "log-level", "", "log level: debug, info, warn, error")
+	headlessCmd.Flags().StringVar(&flagLogFormat, "log-format", "", "log format: json, console")
+	headlessCmd.Flags().StringVar(&flagMetricsAddr, "metrics-addr", "", "metrics server address")
+
+	_ = headlessCmd.MarkFlagRequired("token")
+
+	rootCmd.AddCommand(headlessCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -66,7 +88,7 @@ func parseTunnelFlag(s string) (label, localAddr string, err error) {
 	return label, localAddr, nil
 }
 
-func runAgent(cmd *cobra.Command, args []string) error {
+func loadConfig() (*config.Config, error) {
 	opts := []config.Option{}
 	if flagConfig != "" {
 		opts = append(opts, config.WithConfigPath(flagConfig))
@@ -74,7 +96,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 	cfg, err := config.Load(config.ServiceAgent, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	if flagGatewayAddr != "" {
@@ -96,6 +118,104 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		cfg.Observability.MetricsAddr = flagMetricsAddr
 	}
 
+	return cfg, nil
+}
+
+func runRoot(cmd *cobra.Command, args []string) error {
+	if flagHeadless {
+		return runHeadless(cmd, args)
+	}
+
+	return runTUI()
+}
+
+func runTUI() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	tunnels, err := resolveTunnels(cfg, flagTunnels, flagLocalAddr)
+	if err != nil {
+		return err
+	}
+	cfg.Agent.Tunnels = tunnels
+
+	// Root context: the TUI model holds cancel() and calls it on quit,
+	// propagating shutdown through the errgroup to every QUIC stream.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Buffered event channel — transport goroutines MUST NOT block on UI.
+	// 512 slots give ~256 ms of headroom at 2 events/ms burst.
+	uiEvents := make(chan agent.AgentEvent, 512)
+
+	// Route all zerolog output into the TUI event channel so that no raw
+	// text leaks to the terminal while the alt-screen is active.
+	logr := logger.New(logger.Config{Level: cfg.Log.Level, Format: "json"})
+	log.Logger = logr.Output(agentui.NewEventLogWriter(uiEvents))
+
+	// Optional metrics server (runs independently of the TUI).
+	var metricsSrv *metrics.Server
+	if cfg.Observability.MetricsEnabled {
+		m := metrics.New("tunneledge")
+		metricsSrv = metrics.NewServer(cfg.Observability.MetricsAddr, m)
+		metricsSrv.Start()
+	}
+
+	// Start the QUIC engine in an errgroup so we can wait for all streams
+	// to drain before returning from runTUI.
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		a := agent.NewAgent(agent.Options{
+			GatewayAddr:       cfg.Agent.GatewayAddr,
+			Token:             cfg.Agent.Token,
+			Tunnels:           tunnels,
+			ReconnectDelay:    cfg.Agent.ReconnectDelay,
+			MaxReconnect:      cfg.Agent.MaxReconnect,
+			HeartbeatInterval: cfg.Agent.HeartbeatInterval,
+			TLSCAFile:         cfg.Agent.TLSCAFile,
+			TLSInsecure:       cfg.Agent.TLSInsecure,
+			EventCh:           uiEvents,
+		})
+		if err := a.Run(gctx); err != nil && gctx.Err() == nil {
+			log.Error().Err(err).Msg("agent stopped with error")
+		}
+		return nil
+	})
+
+	// Run the Bubble Tea program on the main goroutine (required by most
+	// terminal emulators for raw-mode input handling).
+	model := agentui.New(ctx, cancel, uiEvents)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, tuiErr := p.Run(); tuiErr != nil {
+		cancel()
+		_ = g.Wait()
+		return fmt.Errorf("TUI error: %w", tuiErr)
+	}
+
+	// The TUI exited (user pressed q/Ctrl+C → cancel() already called).
+	// Block until the QUIC transport has cleanly closed every stream.
+	cancel()
+	if waitErr := g.Wait(); waitErr != nil && waitErr != context.Canceled {
+		return fmt.Errorf("agent shutdown error: %w", waitErr)
+	}
+
+	if metricsSrv != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = metricsSrv.Stop(shutdownCtx)
+	}
+
+	return nil
+}
+
+func runHeadless(cmd *cobra.Command, args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
 	tunnels, err := resolveTunnels(cfg, flagTunnels, flagLocalAddr)
 	if err != nil {
 		return err
@@ -111,7 +231,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		Str("service", cfg.ServiceName).
 		Str("gateway_addr", cfg.Agent.GatewayAddr).
 		Int("tunnel_count", len(tunnels)).
-		Msg("starting agent")
+		Msg("starting agent (headless)")
 
 	for _, t := range tunnels {
 		log.Info().
@@ -135,6 +255,8 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		ReconnectDelay:    cfg.Agent.ReconnectDelay,
 		MaxReconnect:      cfg.Agent.MaxReconnect,
 		HeartbeatInterval: cfg.Agent.HeartbeatInterval,
+		TLSCAFile:         cfg.Agent.TLSCAFile,
+		TLSInsecure:       cfg.Agent.TLSInsecure,
 		Metrics:           m,
 	})
 

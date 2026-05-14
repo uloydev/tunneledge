@@ -51,7 +51,7 @@ func New(namespace string) *Metrics {
 		Namespace: namespace,
 		Name:      "bytes_forwarded_total",
 		Help:      "Total bytes forwarded through tunnels",
-	}, []string{"direction", "tunnel_id"})
+	}, []string{"direction"})
 
 	m.StreamDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: namespace,
@@ -108,17 +108,30 @@ func (m *Metrics) Register() error {
 	return prometheus.Register(m.registry)
 }
 
+type ReadinessCheck func() error
+
 type Server struct {
 	server *http.Server
 	addr   string
 }
 
-func NewServer(addr string, m *Metrics) *Server {
+func NewServer(addr string, m *Metrics, checks ...ReadinessCheck) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "ok")
+	})
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) {
+		for _, check := range checks {
+			if err := check(); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				fmt.Fprintf(w, "not ready: %v", err)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "ready")
 	})
 
 	return &Server{

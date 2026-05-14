@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"tunneledge/internal/auth"
 	"tunneledge/internal/domain"
@@ -108,7 +109,31 @@ func (g *Gateway) Run(ctx context.Context) error {
 	go g.acceptPublicConnections(ctx, publicLn)
 
 	<-ctx.Done()
-	log.Info().Msg("gateway shutting down")
+	log.Info().Msg("gateway shutting down — draining connections")
+
+	// Drain: wait for active streams to finish within ShutdownTimeout
+	drainTimeout := 15 * time.Second
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), drainTimeout)
+	defer drainCancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-drainCtx.Done():
+			log.Info().Msg("drain timeout reached, force closing")
+			goto forceClose
+		case <-ticker.C:
+			if g.streamManager.Count() == 0 {
+				log.Info().Msg("all streams drained")
+				goto forceClose
+			}
+			log.Debug().Int("active_streams", g.streamManager.Count()).Msg("waiting for streams to drain")
+		}
+	}
+
+forceClose:
 	g.closeAll()
 
 	return nil
@@ -241,13 +266,14 @@ func (g *Gateway) ActiveStreamCount() int {
 	return g.streamManager.Count()
 }
 
-func stripPort(addr string) string {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
+// publicPort extracts the port number from a listen address such as ":443"
+// or "0.0.0.0:443" for use in building public URLs.
+// If the address has no port or cannot be parsed, "443" is returned as a safe
+// default (the standard HTTPS/QUIC port).
+func publicPort(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return "443"
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		return "localhost"
-	}
-	return host
+	return port
 }

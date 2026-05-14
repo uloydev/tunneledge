@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{block "title" .}}TunnelEdge{{end}}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#f0f9ff', 100:'#e0f2fe', 200:'#bae6fd', 300:'#7dd3fc', 400:'#38bdf8', 500:'#0ea5e9', 600:'#0284c7', 700:'#0369a1', 800:'#075985', 900:'#0c4a6e' },
+            surface: { 50:'#f8fafc', 100:'#f1f5f9', 700:'#334155', 800:'#1e293b', 900:'#0f172a', 950:'#020617' },
+          }
+        }
+      }
+    }
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+    .htmx-request.htmx-indicator { opacity: 1; }
+    /* Smooth page transitions */
+    .fade-in { animation: fadeIn 0.2s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    /* Toast animation */
+    .toast-enter { animation: toastIn 0.3s ease-out; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="h-full bg-surface-900 text-slate-200 dark" hx-boost="true">
+  <!-- Toast notifications -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2" x-data="{ toasts: [] }" @notify.window="toasts.push({msg: $event.detail.message, type: $event.detail.type || 'info', id: Date.now()}); setTimeout(() => toasts.shift(), 4000)">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast-enter px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-sm"
+           :class="t.type === 'error' ? 'bg-red-500/90 text-white' : t.type === 'success' ? 'bg-emerald-500/90 text-white' : 'bg-brand-500/90 text-white'"
+           x-text="t.msg"></div>
+    </template>
+  </div>
+
+  {{block "content" .}}{{end}}
+
+  <script>
+    // HTMX global error handler → toast
+    document.body.addEventListener('htmx:responseError', function(e) {
+      try {
+        const data = JSON.parse(e.detail.xhr.responseText);
+        window.dispatchEvent(new CustomEvent('notify', { detail: { message: data.error || 'Something went wrong', type: 'error' } }));
+      } catch {
+        window.dispatchEvent(new CustomEvent('notify', { detail: { message: 'Something went wrong', type: 'error' } }));
+      }
+    });
+    // After swap handler
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+      if (e.detail.target.id === 'main-content') {
+        e.detail.target.classList.add('fade-in');
+      }
+    });
+  </script>
+</body>
+</html>

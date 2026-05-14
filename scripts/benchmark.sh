@@ -53,7 +53,7 @@ export const options = {
             startVUs: 0,
             stages: [
                 { duration: '10s', target: parseInt(__ENV.CONCURRENT) }, // Ramp up
-                { duration: '15s', target: parseInt(__ENV.CONCURRENT) }, // Sustain peak load
+                { duration: '5s', target: parseInt(__ENV.CONCURRENT) }, // Sustain peak load
             ],
             gracefulStop: '5s',
         },

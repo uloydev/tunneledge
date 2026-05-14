@@ -4,116 +4,40 @@ import (
 	"fmt"
 	"time"
 
-	"tunneledge/internal/domain"
-	"tunneledge/internal/store"
-
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-type PGSessionRepository struct {
-	db *gorm.DB
-}
-
-func NewPGSessionRepository(db *gorm.DB) *PGSessionRepository {
-	return &PGSessionRepository{db: db}
-}
-
-func (r *PGSessionRepository) Register(sess *domain.Session) error {
-	if sess.TunnelID == "" {
-		return fmt.Errorf("tunnel_id is required")
+// NewDB opens a PostgreSQL connection and returns the *gorm.DB handle.
+func NewDB(dsn string) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	ts := &store.TunnelSession{
-		TunnelID:      sess.TunnelID,
-		AgentID:       sess.AgentID,
-		PublicHost:    sess.PublicAddr,
-		LocalAddr:     sess.LocalAddr,
-		RemoteAddr:    sess.RemoteAddr,
-		Status:        "active",
-		ConnectedAt:   time.Now(),
-		LastHeartbeat: time.Now(),
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
 	}
 
-	if err := r.db.Create(ts).Error; err != nil {
-		return fmt.Errorf("tunnel already registered: %w", err)
-	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
-	sess.CreatedAt = ts.ConnectedAt
-	sess.LastHeartbeat = ts.LastHeartbeat
-	return nil
+	return db, nil
 }
 
-func (r *PGSessionRepository) Deregister(tunnelID string) error {
-	now := time.Now()
-	result := r.db.Model(&store.TunnelSession{}).
-		Where("tunnel_id = ? AND status = ?", tunnelID, "active").
-		Updates(map[string]interface{}{
-			"status":          "closed",
-			"disconnected_at": &now,
-		})
-
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("tunnel %s not found", tunnelID)
-	}
-	return result.Error
-}
-
-func (r *PGSessionRepository) Get(tunnelID string) (*domain.Session, error) {
-	var ts store.TunnelSession
-	if err := r.db.Where("tunnel_id = ? AND status = ?", tunnelID, "active").First(&ts).Error; err != nil {
-		return nil, fmt.Errorf("tunnel %s not found", tunnelID)
-	}
-
-	return &domain.Session{
-		TunnelID:      ts.TunnelID,
-		AgentID:       ts.AgentID,
-		PublicAddr:    ts.PublicHost,
-		LocalAddr:     ts.LocalAddr,
-		RemoteAddr:    ts.RemoteAddr,
-		CreatedAt:     ts.ConnectedAt,
-		LastHeartbeat: ts.LastHeartbeat,
-	}, nil
-}
-
-func (r *PGSessionRepository) List() []*domain.Session {
-	var tunnels []store.TunnelSession
-	r.db.Where("status = ?", "active").Find(&tunnels)
-
-	result := make([]*domain.Session, 0, len(tunnels))
-	for i := range tunnels {
-		result = append(result, &domain.Session{
-			TunnelID:      tunnels[i].TunnelID,
-			AgentID:       tunnels[i].AgentID,
-			PublicAddr:    tunnels[i].PublicHost,
-			LocalAddr:     tunnels[i].LocalAddr,
-			RemoteAddr:    tunnels[i].RemoteAddr,
-			CreatedAt:     tunnels[i].ConnectedAt,
-			LastHeartbeat: tunnels[i].LastHeartbeat,
-		})
-	}
-	return result
-}
-
-func (r *PGSessionRepository) Heartbeat(tunnelID string) error {
-	result := r.db.Model(&store.TunnelSession{}).
-		Where("tunnel_id = ? AND status = ?", tunnelID, "active").
-		Update("last_heartbeat", time.Now())
-
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("tunnel %s not found", tunnelID)
-	}
-	return result.Error
-}
-
-func (r *PGSessionRepository) CleanupExpired(ttl time.Duration) int {
-	cutoff := time.Now().Add(-ttl)
-	now := time.Now()
-	result := r.db.Model(&store.TunnelSession{}).
-		Where("status = ? AND last_heartbeat < ?", "active", cutoff).
-		Updates(map[string]interface{}{
-			"status":          "expired",
-			"disconnected_at": &now,
-		})
-
-	return int(result.RowsAffected)
+// AutoMigrate runs GORM auto-migration for all pgstore models.
+func AutoMigrate(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&TokenModel{},
+		&TunnelSessionModel{},
+		&UserModel{},
+		&AgentProfileModel{},
+		&TunnelDefinitionModel{},
+		&EmailVerificationModel{},
+	)
 }
