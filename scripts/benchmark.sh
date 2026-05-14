@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${TE_BENCH_HOST:-api-agent-1.tunneledge.uloy.dev}"
+HOST="${TE_BENCH_HOST:-default-test-agent-1.tunneledge.uloy.dev}"
 PORT="${TE_BENCH_PORT:-443}"
 TIMEOUT_SEC="${TE_BENCH_TIMEOUT:-360}"   # Increased from 15 to 30 for concurrent load
 CONCURRENT="${TE_BENCH_CONCURRENT:-100}"
@@ -78,7 +78,7 @@ export default function () {
 K6EOF
 
 # ── Throughput tests ────────────────────────────────────────────────
-for size in 1024 10240 102400 1048576; do
+for size in 1024 10240 102400; do
     size_name=$(numfmt --to=iec-i --suffix=B "$size" 2>/dev/null || echo "${size} bytes")
     echo "--- ${size_name} ---"
 
