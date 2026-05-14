@@ -3,18 +3,18 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	colorPrimary    = lipgloss.Color("#00D4AA")
-	colorSuccess    = lipgloss.Color("#A6D189")
-	colorWarning    = lipgloss.Color("#E5C890")
-	colorError      = lipgloss.Color("#E78284")
-	colorInfo       = lipgloss.Color("#8CAAEE")
-	colorMuted      = lipgloss.Color("#6c7086")
-	colorText       = lipgloss.Color("#cdd6f4")
-	colorSurface    = lipgloss.Color("#1a1a2e")
-	colorSurface2   = lipgloss.Color("#232334")
-	colorCyan       = lipgloss.Color("#89DCEB")
-	colorBorder     = lipgloss.Color("#626880")
-	colorSparkline  = lipgloss.Color("#00D4AA")
+	colorPrimary   = lipgloss.Color("#00D4AA")
+	colorSuccess   = lipgloss.Color("#A6D189")
+	colorWarning   = lipgloss.Color("#E5C890")
+	colorError     = lipgloss.Color("#E78284")
+	colorInfo      = lipgloss.Color("#8CAAEE")
+	colorMuted     = lipgloss.Color("#6c7086")
+	colorText      = lipgloss.Color("#cdd6f4")
+	colorSurface   = lipgloss.Color("#1a1a2e")
+	colorSurface2  = lipgloss.Color("#232334")
+	colorCyan      = lipgloss.Color("#89DCEB")
+	colorBorder    = lipgloss.Color("#626880")
+	colorSparkline = lipgloss.Color("#00D4AA")
 )
 
 // Header / status bar.
@@ -69,12 +69,12 @@ var (
 
 // Log level styles.
 var (
-	styleErr        = lipgloss.NewStyle().Foreground(colorError).Bold(true)
-	styleWarn       = lipgloss.NewStyle().Foreground(colorWarning)
-	styleInfo       = lipgloss.NewStyle().Foreground(colorInfo)
-	styleMuted      = lipgloss.NewStyle().Foreground(colorMuted)
-	styleValue      = lipgloss.NewStyle().Foreground(colorText)
-	styleStreamOpen = lipgloss.NewStyle().Foreground(colorCyan)
+	styleErr         = lipgloss.NewStyle().Foreground(colorError).Bold(true)
+	styleWarn        = lipgloss.NewStyle().Foreground(colorWarning)
+	styleInfo        = lipgloss.NewStyle().Foreground(colorInfo)
+	styleMuted       = lipgloss.NewStyle().Foreground(colorMuted)
+	styleValue       = lipgloss.NewStyle().Foreground(colorText)
+	styleStreamOpen  = lipgloss.NewStyle().Foreground(colorCyan)
 	styleStreamClose = lipgloss.NewStyle().Foreground(colorCyan)
 )
 
@@ -85,7 +85,7 @@ var (
 			Foreground(colorMuted).
 			Padding(0, 1)
 
-	styleSparklineBar = lipgloss.NewStyle().Foreground(colorSparkline)
+	styleSparklineBar   = lipgloss.NewStyle().Foreground(colorSparkline)
 	styleSparklineLabel = lipgloss.NewStyle().Foreground(colorMuted)
 )
 

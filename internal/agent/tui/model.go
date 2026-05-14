@@ -57,7 +57,7 @@ type MainModel struct {
 	tunnelEndpoint   string
 
 	// mu guards activeStreams for any reads that might occur outside Update.
-	mu           sync.RWMutex
+	mu            sync.RWMutex
 	activeStreams map[string]StreamStats
 
 	// logs is a ring buffer of rendered log lines capped at maxLogs.
@@ -106,12 +106,12 @@ func New(ctx context.Context, cancel context.CancelFunc, uiEvents <-chan agent.A
 		agentCtx:         ctx,
 		cancel:           cancel,
 		connectionStatus: ConnectionDisconnected,
-		activeStreams:     make(map[string]StreamStats),
-		logs:              make([]string, 0, maxLogs),
-		bandwidthHistory:  make([]int, 0, sparklineLen),
-		uiEvents:          uiEvents,
-		streamList:        l,
-		logVP:             vp,
-		logLines:          make([]string, 0, maxLogs),
+		activeStreams:    make(map[string]StreamStats),
+		logs:             make([]string, 0, maxLogs),
+		bandwidthHistory: make([]int, 0, sparklineLen),
+		uiEvents:         uiEvents,
+		streamList:       l,
+		logVP:            vp,
+		logLines:         make([]string, 0, maxLogs),
 	}
 }
