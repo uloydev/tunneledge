@@ -60,6 +60,7 @@ func NewServer(opts ServerOptions) *Server {
 
 	// Root → landing page
 	mux.HandleFunc("GET /{$}", pageHandler.LandingPage)
+	mux.HandleFunc("GET /docs", pageHandler.DocsPage)
 
 	// ── API routes ────────────────────────────────────────────
 	// Public (no auth)

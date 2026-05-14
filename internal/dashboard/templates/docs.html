@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TunnelEdge — Documentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand:   { 400:'#38bdf8', 500:'#0ea5e9', 600:'#0284c7', 700:'#0369a1' },
+            surface: { 800:'#1e293b', 900:'#0f172a', 950:'#020617' },
+          },
+          fontFamily: { mono: ['"JetBrains Mono"', 'monospace'] },
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { background: #020617; }
+
+    .glass {
+      background: rgba(30,41,59,.5);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(148,163,184,.08);
+    }
+
+    /* Prose-style content */
+    .prose-doc h2 { font-size: 1.5rem; font-weight: 700; color: #f8fafc; margin-top: 2.5rem; margin-bottom: 1rem; padding-bottom: .5rem; border-bottom: 1px solid rgba(148,163,184,.1); scroll-margin-top: 80px; }
+    .prose-doc h3 { font-size: 1.1rem; font-weight: 600; color: #e2e8f0; margin-top: 1.75rem; margin-bottom: .6rem; scroll-margin-top: 80px; }
+    .prose-doc p  { color: #94a3b8; line-height: 1.75; margin-bottom: .9rem; font-size: .95rem; }
+    .prose-doc ul { list-style: none; padding: 0; margin-bottom: .9rem; }
+    .prose-doc ul li { color: #94a3b8; font-size: .95rem; padding-left: 1.25rem; position: relative; margin-bottom: .35rem; }
+    .prose-doc ul li::before { content: '—'; position: absolute; left: 0; color: #38bdf8; }
+    .prose-doc code { font-family: 'JetBrains Mono', monospace; font-size: .8rem; background: rgba(56,189,248,.08); color: #38bdf8; padding: .15rem .4rem; border-radius: .3rem; }
+    .prose-doc a { color: #38bdf8; text-decoration: none; }
+    .prose-doc a:hover { text-decoration: underline; }
+
+    /* Code block */
+    .code-block { background: #0f1629; border: 1px solid rgba(148,163,184,.08); border-radius: .75rem; overflow-x: auto; }
+    .code-block pre { padding: 1.1rem 1.25rem; font-family: 'JetBrains Mono', monospace; font-size: .8rem; line-height: 1.7; color: #cbd5e1; }
+    .sh-cmd  { color: #38bdf8; }
+    .sh-key  { color: #7dd3fc; }
+    .sh-val  { color: #86efac; }
+    .sh-comment { color: #475569; }
+    .sh-section { color: #c084fc; }
+    .sh-flag { color: #a5f3fc; }
+
+    /* Table */
+    .doc-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .doc-table th { text-align: left; padding: .6rem .9rem; color: #64748b; font-weight: 500; border-bottom: 1px solid rgba(148,163,184,.1); }
+    .doc-table td { padding: .6rem .9rem; border-bottom: 1px solid rgba(148,163,184,.06); color: #94a3b8; vertical-align: top; }
+    .doc-table td:first-child { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #38bdf8; white-space: nowrap; }
+    .doc-table tr:last-child td { border-bottom: none; }
+    .doc-table tr:hover td { background: rgba(148,163,184,.03); }
+
+    /* Sidebar active */
+    .nav-link { display: block; padding: .35rem .75rem; border-radius: .4rem; font-size: .82rem; color: #64748b; transition: color .15s, background .15s; }
+    .nav-link:hover { color: #e2e8f0; background: rgba(148,163,184,.06); }
+    .nav-link.active { color: #38bdf8; background: rgba(56,189,248,.08); }
+    .nav-section { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #334155; padding: .9rem .75rem .3rem; }
+
+    /* Callout */
+    .callout { border-left: 3px solid #38bdf8; background: rgba(56,189,248,.06); border-radius: 0 .5rem .5rem 0; padding: .75rem 1rem; margin-bottom: 1rem; }
+    .callout p { margin-bottom: 0; }
+
+    /* Scroll highlight */
+    [id] { scroll-margin-top: 80px; }
+  </style>
+</head>
+<body class="dark text-slate-200 antialiased" x-data="docs()">
+
+  <!-- ── Top navbar ──────────────────────────────────────────────── -->
+  <nav class="fixed top-0 inset-x-0 z-50 bg-surface-950/90 backdrop-blur-md border-b border-white/5 h-14 flex items-center">
+    <div class="max-w-screen-xl mx-auto w-full px-6 flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <a href="/" class="flex items-center gap-2 group">
+          <div class="w-6 h-6 rounded-md bg-brand-500 flex items-center justify-center shadow-[0_0_12px_rgba(14,165,233,.4)]">
+            <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
+            </svg>
+          </div>
+          <span class="text-white font-bold text-sm">TunnelEdge</span>
+        </a>
+        <span class="text-slate-700 text-sm">/</span>
+        <span class="text-slate-400 text-sm font-medium">Docs</span>
+      </div>
+      <div class="flex items-center gap-5 text-sm text-slate-400">
+        <a href="/" class="hover:text-white transition">Home</a>
+        <a href="https://github.com/uloydev/tunneledge" target="_blank" class="hover:text-white transition flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          GitHub
+        </a>
+        <a href="/register" class="px-3.5 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition">Get started</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Layout ──────────────────────────────────────────────────── -->
+  <div class="max-w-screen-xl mx-auto flex pt-14">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────── -->
+    <aside class="hidden lg:block w-60 shrink-0 sticky top-14 self-start h-[calc(100vh-3.5rem)] overflow-y-auto py-6 pr-4 border-r border-white/5">
+      <div class="space-y-0.5">
+        <p class="nav-section">Getting Started</p>
+        <a href="#overview"      class="nav-link" :class="active==='overview'      && 'active'">Overview</a>
+        <a href="#quick-start"   class="nav-link" :class="active==='quick-start'   && 'active'">Quick Start</a>
+        <a href="#docker-deploy" class="nav-link" :class="active==='docker-deploy' && 'active'">Docker Deploy</a>
+
+        <p class="nav-section">Architecture</p>
+        <a href="#architecture"  class="nav-link" :class="active==='architecture'  && 'active'">Architecture</a>
+        <a href="#wire-protocol" class="nav-link" :class="active==='wire-protocol' && 'active'">Wire Protocol</a>
+        <a href="#auth"          class="nav-link" :class="active==='auth'          && 'active'">Authentication</a>
+
+        <p class="nav-section">Configuration</p>
+        <a href="#config-files"  class="nav-link" :class="active==='config-files'  && 'active'">Config Files</a>
+        <a href="#env-vars"      class="nav-link" :class="active==='env-vars'      && 'active'">Environment Vars</a>
+
+        <p class="nav-section">REST API</p>
+        <a href="#api-auth"      class="nav-link" :class="active==='api-auth'      && 'active'">Auth</a>
+        <a href="#api-agents"    class="nav-link" :class="active==='api-agents'    && 'active'">Agents</a>
+        <a href="#api-tunnels"   class="nav-link" :class="active==='api-tunnels'   && 'active'">Tunnels</a>
+        <a href="#api-sessions"  class="nav-link" :class="active==='api-sessions'  && 'active'">Sessions</a>
+      </div>
+    </aside>
+
+    <!-- ── Main content ────────────────────────────────────────── -->
+    <main class="flex-1 min-w-0 px-8 py-10 max-w-3xl prose-doc">
+
+      <!-- Overview -->
+      <div id="overview">
+        <div class="mb-2 flex items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-widest text-brand-400">Documentation</span>
+        </div>
+        <h1 class="text-3xl font-extrabold text-white mb-3 tracking-tight">TunnelEdge</h1>
+        <p class="text-slate-400 text-base mb-6">A self-hosted reverse-tunnel platform built on QUIC. Expose any local TCP service to the internet without opening firewall ports — via encrypted QUIC multiplexed streams and SNI-based domain routing.</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+          <a href="#quick-start" class="glass rounded-xl p-4 hover:border-brand-500/30 transition group">
+            <div class="text-brand-400 mb-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+            </div>
+            <p class="text-white text-sm font-semibold mb-1 group-hover:text-brand-400 transition">Quick Start</p>
+            <p class="text-slate-500 text-xs">Up in 3 commands</p>
+          </a>
+          <a href="#architecture" class="glass rounded-xl p-4 hover:border-brand-500/30 transition group">
+            <div class="text-violet-400 mb-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>
+            </div>
+            <p class="text-white text-sm font-semibold mb-1 group-hover:text-violet-400 transition">Architecture</p>
+            <p class="text-slate-500 text-xs">How it all fits together</p>
+          </a>
+          <a href="#api-agents" class="glass rounded-xl p-4 hover:border-brand-500/30 transition group">
+            <div class="text-emerald-400 mb-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/></svg>
+            </div>
+            <p class="text-white text-sm font-semibold mb-1 group-hover:text-emerald-400 transition">REST API</p>
+            <p class="text-slate-500 text-xs">Full endpoint reference</p>
+          </a>
+        </div>
+      </div>
+
+      <!-- Quick Start -->
+      <h2 id="quick-start">Quick Start</h2>
+      <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, gateway, dashboard, and Mailpit for email — starts with one command.</p>
+
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>Docker + Docker Compose v2</li>
+        <li>A domain with a wildcard DNS record pointing to your server (e.g. <code>*.tunneledge.example.com → 1.2.3.4</code>)</li>
+        <li>Go 1.22+ (only required if building from source)</li>
+      </ul>
+
+      <h3>1. Clone and start</h3>
+      <div class="code-block mb-4">
+        <pre><span class="sh-cmd">git clone</span> <span class="sh-val">https://github.com/uloydev/tunneledge</span>
+<span class="sh-cmd">cd</span> tunneledge
+<span class="sh-cmd">docker compose</span> <span class="sh-flag">-f</span> deployments/docker/docker-compose.yml up <span class="sh-flag">-d</span></pre>
+      </div>
+
+      <h3>2. Register an account</h3>
+      <p>Open <code>http://localhost:8082</code>, create an account, and verify your email via Mailpit at <code>http://localhost:18025</code>.</p>
+
+      <h3>3. Create an agent</h3>
+      <p>In the dashboard go to <strong>Agents → New agent</strong>. Copy the token shown — it is displayed only once.</p>
+
+      <h3>4. Configure and run the agent</h3>
+      <div class="code-block mb-4">
+        <pre><span class="sh-comment"># config/agent.yaml</span>
+<span class="sh-section">agent</span>:
+  <span class="sh-key">gateway_addr</span>: <span class="sh-val">your-server.example.com:4433</span>
+  <span class="sh-key">token</span>:        <span class="sh-val">te_xxxxxxxxxxxxxxxx</span>
+  <span class="sh-key">tunnels</span>:
+    - <span class="sh-key">label</span>:      <span class="sh-val">web</span>
+      <span class="sh-key">local_addr</span>: <span class="sh-val">localhost:3000</span></pre>
+      </div>
+      <div class="code-block mb-4">
+        <pre><span class="sh-cmd">./bin/agent</span> <span class="sh-flag">-c</span> config/agent.yaml</pre>
+      </div>
+      <p>Your service is now live at <code>https://web-&lt;agent-id&gt;.yourdomain.example.com</code>.</p>
+
+      <!-- Docker Deploy -->
+      <h2 id="docker-deploy">Docker Deploy</h2>
+      <p>The <code>deployments/docker/docker-compose.yml</code> file defines the full production stack.</p>
+
+      <h3>Services</h3>
+      <ul>
+        <li><strong>postgres</strong> — PostgreSQL 16 (persistent volume <code>pgdata</code>)</li>
+        <li><strong>registry</strong> — gRPC session registry on port <code>50051</code></li>
+        <li><strong>gateway</strong> — QUIC agent listener <code>:4433/udp</code>, public TLS <code>:443/tcp</code>, metrics <code>:9090</code></li>
+        <li><strong>dashboard</strong> — HTTP API + HTMX web UI on <code>:8080</code> (mapped to <code>8082</code> in dev)</li>
+        <li><strong>mailpit</strong> — Dev SMTP server; web UI on <code>:18025</code></li>
+        <li><strong>http-echo</strong> — Sample echo service for testing tunnels</li>
+      </ul>
+
+      <h3>TLS certificates</h3>
+      <p>Generate self-signed wildcard certs for local development:</p>
+      <div class="code-block mb-4">
+        <pre><span class="sh-cmd">make</span> certs</pre>
+      </div>
+      <p>For production use a real wildcard certificate from Let's Encrypt or your CA. Mount <code>certs/</code> into the gateway container and set <code>TE_GATEWAY_TLS_CERT_FILE</code> / <code>TE_GATEWAY_TLS_KEY_FILE</code>.</p>
+
+      <!-- Architecture -->
+      <h2 id="architecture">Architecture</h2>
+      <p>TunnelEdge is four cooperating services. Each is a standalone Go binary.</p>
+
+      <div class="code-block mb-6">
+        <pre><span class="sh-comment">┌────────────────┐</span>
+<span class="sh-comment">│   CLI Agent    │   ./bin/agent</span>
+<span class="sh-comment">│   Go + QUIC    │</span>
+<span class="sh-comment">└───────┬────────┘</span>
+        <span class="sh-comment">│ QUIC/TLS 1.3  (port 4433)</span>
+<span class="sh-comment">┌───────▼────────┐        Public clients</span>
+<span class="sh-comment">│   Gateway      │◄─────── TLS SNI (port 443)</span>
+<span class="sh-comment">└───────┬────────┘</span>
+        <span class="sh-comment">│ gRPC  (port 50051)</span>
+<span class="sh-comment">┌───────▼────────┐</span>
+<span class="sh-comment">│   Registry     │   session & routing state</span>
+<span class="sh-comment">└────────────────┘</span>
+        <span class="sh-comment">│ HTTP REST + SSE  (port 8080)</span>
+<span class="sh-comment">┌───────▼────────┐</span>
+<span class="sh-comment">│   Dashboard    │   agents · tunnels · sessions</span>
+<span class="sh-comment">└────────────────┘</span></pre>
+      </div>
+
+      <h3>Data flow (incoming public request)</h3>
+      <ul>
+        <li>Public client connects to <code>web-myserver.yourdomain.dev:443</code> via TLS</li>
+        <li>Gateway reads the TLS SNI hostname during the handshake</li>
+        <li><code>TunnelRouter</code> maps hostname → tunnel ID (in-memory, populated by registry)</li>
+        <li>Gateway opens a new QUIC stream to the agent holding that tunnel</li>
+        <li>Agent accepts the stream, dials the local TCP service</li>
+        <li>Bidirectional relay begins — data flows transparently at wire speed</li>
+      </ul>
+
+      <h3>Stream multiplexing</h3>
+      <p>Each agent holds a <em>single</em> QUIC connection to the gateway. Incoming public TCP connections each become independent QUIC streams on that connection — no head-of-line blocking, no per-connection TLS overhead.</p>
+
+      <!-- Wire Protocol -->
+      <h2 id="wire-protocol">Wire Protocol</h2>
+      <p>The agent↔gateway control channel runs over a dedicated QUIC stream. Every frame starts with a 1-byte message type tag.</p>
+
+      <div class="code-block mb-4">
+        <pre><span class="sh-comment">Byte  Name              Direction    Version</span>
+<span class="sh-val">0x00</span>  <span class="sh-key">MsgHello</span>          agent→gw     v2+
+<span class="sh-val">0x01</span>  <span class="sh-key">MsgAuth</span>           agent→gw     v1 (legacy)
+<span class="sh-val">0x02</span>  <span class="sh-key">MsgAuthResponse</span>   gw→agent     v1
+<span class="sh-val">0x03</span>  <span class="sh-key">MsgData</span>           both         v1+
+<span class="sh-val">0x04</span>  <span class="sh-key">MsgHeartbeat</span>      agent→gw     v1+
+<span class="sh-val">0x05</span>  <span class="sh-key">MsgClose</span>          both         v1+
+<span class="sh-val">0x06</span>  <span class="sh-key">MsgAuthV2</span>         agent→gw     v2+
+<span class="sh-val">0x07</span>  <span class="sh-key">MsgAuthRespV2</span>     gw→agent     v2+
+<span class="sh-val">0x08</span>  <span class="sh-key">MsgStreamLabel</span>    gw→agent     v2+</pre>
+      </div>
+
+      <h3>Connection handshake (v2)</h3>
+      <ul>
+        <li>Agent opens QUIC control stream, sends <code>MsgHello</code>: <code>[0x00][version uint16][len uint16][clientVersion string]</code></li>
+        <li>Current <code>ProtocolVersion = 2</code>. Gateway closes the connection if versions differ.</li>
+        <li>Agent immediately follows with <code>MsgAuthV2</code>: token + list of <code>{label, local_addr}</code> tunnel entries</li>
+        <li>Gateway validates the token (HMAC pre-filter → bcrypt), registers tunnels, replies with <code>MsgAuthRespV2</code></li>
+      </ul>
+
+      <div class="callout">
+        <p><strong class="text-brand-400">Note:</strong> <code>MsgAuth</code> / <code>MsgAuthResponse</code> (v1) are still parsed for backward compatibility but v2 clients always send <code>MsgHello</code> first.</p>
+      </div>
+
+      <!-- Authentication -->
+      <h2 id="auth">Authentication</h2>
+      <h3>Agent tokens</h3>
+      <p>Tokens are random 32-byte hex strings (<code>te_&lt;hex&gt;</code>). The gateway stores only the <strong>bcrypt hash</strong> — the raw token is shown once in the dashboard at creation time.</p>
+      <p>On each QUIC connection the gateway authenticates as follows:</p>
+      <ul>
+        <li>If an HMAC fingerprint is stored alongside the hash (set at token-issuance time), the gateway computes a constant-time HMAC comparison first, skipping bcrypt for non-matching entries</li>
+        <li>Only the single matching entry incurs the ~100 ms bcrypt cost</li>
+        <li>Rotate tokens any time via the dashboard or <code>POST /api/v1/agents/:id/rotate-token</code></li>
+      </ul>
+
+      <h3>Dashboard users</h3>
+      <p>Passwords are bcrypt-hashed at registration. Sessions use short-lived JWTs (HS256, 24 h default). Email verification is required before login. Rate limiting applies to <code>/api/v1/auth/login</code> and <code>/api/v1/auth/register</code> (5 requests/min per IP).</p>
+
+      <!-- Config Files -->
+      <h2 id="config-files">Config Files</h2>
+      <p>Each service reads a YAML config file from <code>config/&lt;service&gt;.yaml</code> (or the path passed with <code>-c</code>). All keys are nested under their service section. Example:</p>
+
+      <div class="code-block mb-4">
+        <pre><span class="sh-comment"># config/gateway.yaml</span>
+<span class="sh-section">log</span>:
+  <span class="sh-key">level</span>:  <span class="sh-val">info</span>
+  <span class="sh-key">format</span>: <span class="sh-val">json</span>
+
+<span class="sh-section">gateway</span>:
+  <span class="sh-key">quic_listen_addr</span>:   <span class="sh-val">:4433</span>
+  <span class="sh-key">public_listen_addr</span>: <span class="sh-val">:443</span>
+  <span class="sh-key">base_domain</span>:        <span class="sh-val">tunneledge.example.com</span>
+  <span class="sh-key">registry_addr</span>:      <span class="sh-val">localhost:50051</span>
+  <span class="sh-key">tls_cert_file</span>:      <span class="sh-val">certs/server.crt</span>
+  <span class="sh-key">tls_key_file</span>:       <span class="sh-val">certs/server.key</span>
+
+<span class="sh-section">db</span>:
+  <span class="sh-key">driver</span>: <span class="sh-val">postgres</span>
+  <span class="sh-key">dsn</span>:    <span class="sh-val">host=localhost port=5432 user=te password=te dbname=te sslmode=disable</span></pre>
+      </div>
+
+      <div class="code-block mb-4">
+        <pre><span class="sh-comment"># config/agent.yaml</span>
+<span class="sh-section">agent</span>:
+  <span class="sh-key">gateway_addr</span>:        <span class="sh-val">gateway.example.com:4433</span>
+  <span class="sh-key">token</span>:               <span class="sh-val">te_xxxxxxxxxxxxxxxx</span>
+  <span class="sh-key">reconnect_delay</span>:     <span class="sh-val">2s</span>
+  <span class="sh-key">max_reconnect</span>:       <span class="sh-val">0</span>          <span class="sh-comment"># 0 = unlimited</span>
+  <span class="sh-key">heartbeat_interval</span>:  <span class="sh-val">15s</span>
+  <span class="sh-key">tls_insecure</span>:        <span class="sh-val">false</span>
+  <span class="sh-key">tunnels</span>:
+    - <span class="sh-key">label</span>:      <span class="sh-val">web</span>
+      <span class="sh-key">local_addr</span>: <span class="sh-val">localhost:3000</span>
+    - <span class="sh-key">label</span>:      <span class="sh-val">api</span>
+      <span class="sh-key">local_addr</span>: <span class="sh-val">localhost:8080</span></pre>
+      </div>
+
+      <!-- Environment Variables -->
+      <h2 id="env-vars">Environment Variables</h2>
+      <p>All config keys map to <code>TE_</code> prefixed environment variables. Dots become underscores: <code>gateway.quic_listen_addr</code> → <code>TE_GATEWAY_QUIC_LISTEN_ADDR</code>. Env vars take precedence over YAML.</p>
+
+      <h3>Shared</h3>
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>TE_LOG_LEVEL</td><td>info</td><td>debug · info · warn · error</td></tr>
+            <tr><td>TE_LOG_FORMAT</td><td>json</td><td>json · console</td></tr>
+            <tr><td>TE_OBSERVABILITY_METRICS_ENABLED</td><td>true</td><td>Expose Prometheus metrics endpoint</td></tr>
+            <tr><td>TE_OBSERVABILITY_METRICS_ADDR</td><td>:9090</td><td>Metrics server listen address</td></tr>
+            <tr><td>TE_DB_DRIVER</td><td>memory</td><td>postgres · memory</td></tr>
+            <tr><td>TE_DB_DSN</td><td>—</td><td>PostgreSQL connection string</td></tr>
+            <tr><td>TE_DB_MAX_OPEN_CONNS</td><td>10</td><td>Max open DB connections</td></tr>
+            <tr><td>TE_DB_AUTO_MIGRATE</td><td>true</td><td>Run schema migrations on startup</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Gateway</h3>
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>TE_GATEWAY_QUIC_LISTEN_ADDR</td><td>:4433</td><td>QUIC listen address for agents</td></tr>
+            <tr><td>TE_GATEWAY_PUBLIC_LISTEN_ADDR</td><td>:443</td><td>Public TLS listen address (SNI routing)</td></tr>
+            <tr><td>TE_GATEWAY_BASE_DOMAIN</td><td>tunneledge.dev</td><td>Base domain for tunnel subdomains</td></tr>
+            <tr><td>TE_GATEWAY_REGISTRY_ADDR</td><td>localhost:50051</td><td>Registry gRPC address</td></tr>
+            <tr><td>TE_GATEWAY_TLS_CERT_FILE</td><td>—</td><td>Wildcard TLS certificate PEM path</td></tr>
+            <tr><td>TE_GATEWAY_TLS_KEY_FILE</td><td>—</td><td>Wildcard TLS private key PEM path</td></tr>
+            <tr><td>TE_GATEWAY_REGISTRY_TLS_CERT</td><td>insecure</td><td>Registry gRPC CA cert path; "insecure" skips verification</td></tr>
+            <tr><td>TE_GATEWAY_GRPC_AUTH_TOKEN</td><td>—</td><td>Bearer token for registry gRPC calls</td></tr>
+            <tr><td>TE_GATEWAY_MAX_STREAMS</td><td>1000</td><td>Max concurrent QUIC streams per connection</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Registry</h3>
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>TE_REGISTRY_GRPC_LISTEN_ADDR</td><td>:50051</td><td>gRPC listen address</td></tr>
+            <tr><td>TE_REGISTRY_SESSION_TTL</td><td>5m</td><td>Inactive session expiry</td></tr>
+            <tr><td>TE_REGISTRY_CLEANUP_INTERVAL</td><td>1m</td><td>Session cleanup loop interval</td></tr>
+            <tr><td>TE_REGISTRY_TLS_CERT_FILE</td><td>—</td><td>gRPC TLS certificate PEM path</td></tr>
+            <tr><td>TE_REGISTRY_TLS_KEY_FILE</td><td>—</td><td>gRPC TLS private key PEM path</td></tr>
+            <tr><td>TE_REGISTRY_GRPC_AUTH_TOKEN</td><td>—</td><td>Expected bearer token from gateway</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Dashboard</h3>
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>TE_DASHBOARD_HTTP_LISTEN_ADDR</td><td>:8080</td><td>HTTP listen address</td></tr>
+            <tr><td>TE_DASHBOARD_JWT_SECRET</td><td>—</td><td><strong class="text-amber-400">Required.</strong> JWT signing secret (≥32 bytes)</td></tr>
+            <tr><td>TE_DASHBOARD_JWT_TTL</td><td>24h</td><td>JWT token lifetime</td></tr>
+            <tr><td>TE_DASHBOARD_BASE_URL</td><td>http://localhost:8080</td><td>Public base URL (used in verification emails)</td></tr>
+            <tr><td>TE_DASHBOARD_SMTP_HOST</td><td>localhost</td><td>SMTP server host</td></tr>
+            <tr><td>TE_DASHBOARD_SMTP_PORT</td><td>1025</td><td>SMTP server port</td></tr>
+            <tr><td>TE_DASHBOARD_SMTP_FROM</td><td>noreply@tunneledge.dev</td><td>From address for verification emails</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Agent</h3>
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>TE_AGENT_GATEWAY_ADDR</td><td>localhost:4433</td><td>Gateway QUIC address</td></tr>
+            <tr><td>TE_AGENT_TOKEN</td><td>—</td><td>Agent authentication token</td></tr>
+            <tr><td>TE_AGENT_RECONNECT_DELAY</td><td>2s</td><td>Initial reconnect backoff</td></tr>
+            <tr><td>TE_AGENT_MAX_RECONNECT</td><td>0</td><td>Max reconnect attempts (0 = unlimited)</td></tr>
+            <tr><td>TE_AGENT_HEARTBEAT_INTERVAL</td><td>15s</td><td>Heartbeat send interval</td></tr>
+            <tr><td>TE_AGENT_TLS_INSECURE</td><td>false</td><td>Skip TLS cert verification (dev only)</td></tr>
+            <tr><td>TE_AGENT_TLS_CA_FILE</td><td>—</td><td>Custom CA PEM for gateway TLS</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- API Auth -->
+      <h2 id="api-auth">REST API — Auth</h2>
+      <p>Base URL: <code>http://your-dashboard:8080/api/v1</code>. All protected endpoints require <code>Authorization: Bearer &lt;jwt&gt;</code> (or a <code>session</code> HTTP-only cookie set by login).</p>
+
+      <h3>POST /auth/register</h3>
+      <p>Rate-limited to <strong>5 req/min per IP</strong>.</p>
+      <div class="code-block mb-3">
+        <pre><span class="sh-comment">// Request</span>
+{ <span class="sh-key">"email"</span>: <span class="sh-val">"user@example.com"</span>, <span class="sh-key">"password"</span>: <span class="sh-val">"..."</span>, <span class="sh-key">"name"</span>: <span class="sh-val">"Alice"</span> }
+
+<span class="sh-comment">// 201 Created</span>
+{ <span class="sh-key">"message"</span>: <span class="sh-val">"registration successful, please check your email"</span> }</pre>
+      </div>
+
+      <h3>POST /auth/login</h3>
+      <p>Rate-limited to <strong>5 req/min per IP</strong>. Returns a JWT and sets a <code>session</code> cookie.</p>
+      <div class="code-block mb-3">
+        <pre><span class="sh-comment">// Request</span>
+{ <span class="sh-key">"email"</span>: <span class="sh-val">"user@example.com"</span>, <span class="sh-key">"password"</span>: <span class="sh-val">"..."</span> }
+
+<span class="sh-comment">// 200 OK</span>
+{ <span class="sh-key">"token"</span>: <span class="sh-val">"eyJ..."</span>, <span class="sh-key">"expires_at"</span>: <span class="sh-val">1747000000</span> }</pre>
+      </div>
+
+      <h3>POST /auth/logout</h3>
+      <p>Clears the session cookie. No body required.</p>
+
+      <h3>POST /auth/resend-verification</h3>
+      <p>Body: <code>{"email": "..."}</code>. Always returns 200 (no enumeration).</p>
+
+      <h3>GET /auth/me <span class="text-xs text-brand-400 ml-1">🔒</span></h3>
+      <p>Returns the authenticated user's profile.</p>
+      <div class="code-block mb-6">
+        <pre><span class="sh-comment">// 200 OK</span>
+{ <span class="sh-key">"id"</span>: <span class="sh-val">1</span>, <span class="sh-key">"email"</span>: <span class="sh-val">"user@example.com"</span>, <span class="sh-key">"name"</span>: <span class="sh-val">"Alice"</span>, <span class="sh-key">"created_at"</span>: <span class="sh-val">"..."</span> }</pre>
+      </div>
+
+      <!-- API Agents -->
+      <h2 id="api-agents">REST API — Agents <span class="text-xs text-brand-400 ml-1">🔒</span></h2>
+
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Method + Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>POST /agents</td><td>Create agent. Returns token (shown once). Body: <code>{"name":"…","agent_id":"…"}</code></td></tr>
+            <tr><td>GET /agents</td><td>List all agents owned by the authenticated user</td></tr>
+            <tr><td>GET /agents/:id</td><td>Get a single agent by ID</td></tr>
+            <tr><td>PUT /agents/:id</td><td>Update agent name. Body: <code>{"name":"…"}</code></td></tr>
+            <tr><td>DELETE /agents/:id</td><td>Delete agent and all its tunnels</td></tr>
+            <tr><td>POST /agents/:id/rotate-token</td><td>Rotate the agent's auth token. Returns new raw token once.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Agent response shape</h3>
+      <div class="code-block mb-6">
+        <pre>{ <span class="sh-key">"id"</span>: <span class="sh-val">1</span>, <span class="sh-key">"name"</span>: <span class="sh-val">"my-server"</span>, <span class="sh-key">"agent_id"</span>: <span class="sh-val">"my-server"</span>,
+  <span class="sh-key">"created_at"</span>: <span class="sh-val">"2026-05-15T…"</span>, <span class="sh-key">"updated_at"</span>: <span class="sh-val">"2026-05-15T…"</span> }</pre>
+      </div>
+
+      <!-- API Tunnels -->
+      <h2 id="api-tunnels">REST API — Tunnels <span class="text-xs text-brand-400 ml-1">🔒</span></h2>
+      <p>Tunnels are nested under agents: <code>/agents/:id/tunnels</code>.</p>
+
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Method + Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>POST /agents/:id/tunnels</td><td>Create tunnel. Body: <code>{"label":"web","local_addr":"localhost:3000"}</code></td></tr>
+            <tr><td>GET /agents/:id/tunnels</td><td>List all tunnels for the agent</td></tr>
+            <tr><td>GET /agents/:id/tunnels/:tid</td><td>Get a single tunnel</td></tr>
+            <tr><td>PUT /agents/:id/tunnels/:tid</td><td>Update label or local address</td></tr>
+            <tr><td>DELETE /agents/:id/tunnels/:tid</td><td>Delete a tunnel</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- API Sessions -->
+      <h2 id="api-sessions">REST API — Sessions <span class="text-xs text-brand-400 ml-1">🔒</span></h2>
+      <p>Active sessions are live tunnel connections registered by the gateway.</p>
+
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Method + Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>GET /sessions</td><td>List all active sessions</td></tr>
+            <tr><td>DELETE /sessions/:tunnelID</td><td>Force-close a session</td></tr>
+            <tr><td>GET /agents/:id/status</td><td>Get the active session for a specific agent</td></tr>
+            <tr><td>GET /events</td><td>SSE stream — real-time session and agent state changes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Session response shape</h3>
+      <div class="code-block mb-10">
+        <pre>{ <span class="sh-key">"tunnel_id"</span>: <span class="sh-val">"t-my-server"</span>, <span class="sh-key">"agent_id"</span>: <span class="sh-val">"my-server"</span>,
+  <span class="sh-key">"public_addr"</span>: <span class="sh-val">"web-my-server.example.com:443"</span>,
+  <span class="sh-key">"local_addr"</span>:  <span class="sh-val">"localhost:3000"</span>,
+  <span class="sh-key">"created_at"</span>:  <span class="sh-val">1747000000</span>,
+  <span class="sh-key">"last_heartbeat"</span>: <span class="sh-val">1747000120</span> }</pre>
+      </div>
+
+      <!-- Footer -->
+      <div class="border-t border-white/5 pt-8 flex items-center justify-between text-sm text-slate-600">
+        <span>TunnelEdge © 2026</span>
+        <a href="https://github.com/uloydev/tunneledge" target="_blank" class="hover:text-slate-400 transition flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          GitHub
+        </a>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+  function docs() {
+    return {
+      active: 'overview',
+      init() {
+        const sections = document.querySelectorAll('[id]');
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(e => {
+            if (e.isIntersecting) this.active = e.target.id;
+          });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+        sections.forEach(s => observer.observe(s));
+      }
+    }
+  }
+  </script>
+</body>
+</html>

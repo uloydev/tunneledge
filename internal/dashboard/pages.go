@@ -29,7 +29,7 @@ func (h *PageHandler) loadTemplates() {
 	layoutStr := string(layoutBytes)
 
 	// Standalone pages (no layout wrapper)
-	standalone := []string{"landing"}
+	standalone := []string{"landing", "docs"}
 	for _, p := range standalone {
 		data, err := templateFS.ReadFile("templates/" + p + ".html")
 		if err != nil {
@@ -98,6 +98,11 @@ type pageData struct {
 func (h *PageHandler) LandingPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = h.render(w, "landing", nil)
+}
+
+func (h *PageHandler) DocsPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = h.render(w, "docs", nil)
 }
 
 func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
