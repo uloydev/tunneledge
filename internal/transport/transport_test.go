@@ -176,3 +176,38 @@ func TestClientTLSConfig(t *testing.T) {
 	assert.True(t, cfg.InsecureSkipVerify)
 	assert.Equal(t, []string{"tunneledge"}, cfg.NextProtos)
 }
+
+func TestEncodeDecodeHello(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, EncodeHello(&buf, "tunneledge/agent"))
+
+	// Read the first byte (MsgHello) like the gateway does.
+	msgType, err := ReadMessageType(&buf)
+	require.NoError(t, err)
+	assert.Equal(t, MsgHello, msgType)
+
+	hello, err := DecodeHello(&buf)
+	require.NoError(t, err)
+	assert.Equal(t, ProtocolVersion, hello.Version)
+	assert.Equal(t, "tunneledge/agent", hello.ClientVersion)
+}
+
+func TestDecodeHello_VersionMismatch(t *testing.T) {
+	// Build a frame with an incompatible version.
+	var buf bytes.Buffer
+	require.NoError(t, EncodeHello(&buf, "tunneledge/agent"))
+
+	// Patch the version bytes (offset 1 and 2 in the raw frame).
+	data := buf.Bytes()
+	data[1] = 0xFF
+	data[2] = 0xFF
+
+	patchedBuf := bytes.NewBuffer(data)
+	// Skip the MsgHello byte.
+	_, _ = ReadMessageType(patchedBuf)
+
+	hello, err := DecodeHello(patchedBuf)
+	require.NoError(t, err)
+	// Version should be 0xFFFF, which is != ProtocolVersion.
+	assert.NotEqual(t, ProtocolVersion, hello.Version)
+}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"tunneledge/internal/domain"
@@ -25,23 +24,29 @@ type ServerOptions struct {
 	Users         domain.UserRepository
 	Agents        domain.AgentProfileRepository
 	Tokens        domain.TokenRepository
-	Tunnels       domain.TunnelDefinitionRepository
+	Tunnels       domain.TunnelConfigRepository
 	Sessions      domain.SessionRepository
 	Verifications domain.EmailVerificationRepository
 	EmailService  *email.Service
 }
 
 func NewServer(opts ServerOptions) *Server {
-	authHandler := NewAuthHandler(opts.Users, opts.Verifications, opts.EmailService, opts.BaseURL, opts.JWTCfg)
-	agentHandler := NewAgentHandler(opts.Agents, opts.Tokens, opts.Tunnels)
-	tunnelHandler := NewTunnelHandler(opts.Tunnels, opts.Agents)
+	// ── Services ──────────────────────────────────────────────
+	authSvc := NewAuthService(opts.Users, opts.Verifications, opts.EmailService, opts.BaseURL, opts.JWTCfg)
+	agentSvc := NewAgentService(opts.Agents, opts.Tokens, opts.Tunnels)
+	tunnelSvc := NewTunnelService(opts.Tunnels, opts.Agents)
+
+	// ── Handlers ──────────────────────────────────────────────
+	authHandler := NewAuthHandler(authSvc)
+	agentHandler := NewAgentHandler(agentSvc)
+	tunnelHandler := NewTunnelHandler(tunnelSvc)
 	statusHandler := NewStatusHandler(opts.Sessions, opts.Agents)
 	sseHandler := NewSSEHandler(opts.Sessions, opts.Agents, opts.Tunnels)
 	pageHandler := NewPageHandler()
 
 	mux := http.NewServeMux()
 
-	// ── Web pages ────────────────────────────────────────────
+	// ── Web pages ─────────────────────────────────────────────
 	mux.HandleFunc("GET /login", pageHandler.LoginPage)
 	mux.HandleFunc("GET /register", pageHandler.RegisterPage)
 	mux.HandleFunc("GET /verify", authHandler.VerifyEmail)
@@ -56,14 +61,13 @@ func NewServer(opts ServerOptions) *Server {
 	// Root → landing page
 	mux.HandleFunc("GET /{$}", pageHandler.LandingPage)
 
-	// ── API routes ───────────────────────────────────────────
+	// ── API routes ────────────────────────────────────────────
 	// Public (no auth)
-	mux.HandleFunc("POST /api/v1/auth/register", authHandler.Register)
-	mux.HandleFunc("POST /api/v1/auth/login", authHandler.Login)
+	mux.Handle("POST /api/v1/auth/register", RateLimitMiddleware(http.HandlerFunc(authHandler.Register)))
+	mux.Handle("POST /api/v1/auth/login", RateLimitMiddleware(http.HandlerFunc(authHandler.Login)))
 	mux.HandleFunc("POST /api/v1/auth/logout", authHandler.Logout)
 	mux.HandleFunc("POST /api/v1/auth/resend-verification", authHandler.ResendVerification)
 
-	// Protected routes
 	authMw := JWTAuthMiddleware(opts.JWTCfg.Secret)
 
 	mux.Handle("GET /api/v1/auth/me", authMw(http.HandlerFunc(authHandler.Me)))
@@ -71,31 +75,12 @@ func NewServer(opts ServerOptions) *Server {
 	// Agents
 	mux.Handle("POST /api/v1/agents", authMw(http.HandlerFunc(agentHandler.Create)))
 	mux.Handle("GET /api/v1/agents", authMw(http.HandlerFunc(agentHandler.List)))
-	mux.Handle("GET /api/v1/agents/{id}", authMw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/api/v1/agents/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 1 {
-			agentHandler.Get(w, r)
-			return
-		}
-		if len(parts) >= 2 {
-			switch parts[1] {
-			case "tunnels":
-				if len(parts) == 2 {
-					tunnelHandler.List(w, r)
-				} else {
-					tunnelHandler.Get(w, r)
-				}
-			case "status":
-				statusHandler.AgentStatus(w, r)
-			}
-		}
-	})))
+	mux.Handle("GET /api/v1/agents/{id}", authMw(http.HandlerFunc(agentHandler.Get)))
 	mux.Handle("PUT /api/v1/agents/{id}", authMw(http.HandlerFunc(agentHandler.Update)))
 	mux.Handle("DELETE /api/v1/agents/{id}", authMw(http.HandlerFunc(agentHandler.Delete)))
 	mux.Handle("POST /api/v1/agents/{id}/rotate-token", authMw(http.HandlerFunc(agentHandler.RotateToken)))
 
-	// Tunnels
+	// Tunnels (sub-resources of agents)
 	mux.Handle("POST /api/v1/agents/{id}/tunnels", authMw(http.HandlerFunc(tunnelHandler.Create)))
 	mux.Handle("GET /api/v1/agents/{id}/tunnels", authMw(http.HandlerFunc(tunnelHandler.List)))
 	mux.Handle("GET /api/v1/agents/{id}/tunnels/{tid}", authMw(http.HandlerFunc(tunnelHandler.Get)))
@@ -116,14 +101,14 @@ func NewServer(opts ServerOptions) *Server {
 		fmt.Fprint(w, "ok")
 	})
 
-	handler := CORSMiddleware(LoggingMiddleware(mux))
+	handler := RequestIDMiddleware(CORSMiddleware(LoggingMiddleware(mux)))
 
 	return &Server{
 		httpServer: &http.Server{
 			Addr:              opts.Addr,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
-			WriteTimeout:      0, // SSE connections are long-lived; per-handler timeouts apply
+			WriteTimeout:      0, // SSE connections are long-lived
 			IdleTimeout:       60 * time.Second,
 		},
 		jwtCfg: opts.JWTCfg,

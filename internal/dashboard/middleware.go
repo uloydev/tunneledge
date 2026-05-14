@@ -2,22 +2,56 @@ package dashboard
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/time/rate"
 )
 
 type contextKey string
 
-const userIDKey contextKey = "user_id"
+const (
+	userIDKey    contextKey = "user_id"
+	requestIDKey contextKey = "request_id"
+
+	// ExportedUserIDKey is the same key exposed for use in tests.
+	ExportedUserIDKey = userIDKey
+)
 
 func UserIDFromContext(ctx context.Context) (uint, bool) {
 	id, ok := ctx.Value(userIDKey).(uint)
 	return id, ok
+}
+
+// RequestIDFromContext returns the request ID injected by RequestIDMiddleware.
+func RequestIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey).(string)
+	return id
+}
+
+// RequestIDMiddleware generates a unique ID for each request, injects it into
+// the context, and echoes it back in the X-Request-ID response header.
+func RequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-ID")
+		if id == "" {
+			b := make([]byte, 8)
+			if _, err := rand.Read(b); err == nil {
+				id = hex.EncodeToString(b)
+			}
+		}
+		w.Header().Set("X-Request-ID", id)
+		ctx := context.WithValue(r.Context(), requestIDKey, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 type JWTConfig struct {
@@ -136,6 +170,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
 		log.Info().
+			Str("request_id", RequestIDFromContext(r.Context())).
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
 			Int("status", wrapped.status).
@@ -167,6 +202,52 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
+}
+
+// ipRateLimiter enforces a per-IP token-bucket rate limit.
+type ipRateLimiter struct {
+	mu       sync.Mutex
+	visitors map[string]*rate.Limiter
+	r        rate.Limit
+	b        int
+}
+
+func newIPRateLimiter(r rate.Limit, b int) *ipRateLimiter {
+	return &ipRateLimiter{
+		visitors: make(map[string]*rate.Limiter),
+		r:        r,
+		b:        b,
+	}
+}
+
+func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	lim, ok := l.visitors[ip]
+	if !ok {
+		lim = rate.NewLimiter(l.r, l.b)
+		l.visitors[ip] = lim
+	}
+	return lim
+}
+
+// authLimiter allows 5 requests per minute with a burst of 10, per source IP.
+var authLimiter = newIPRateLimiter(rate.Every(12*time.Second), 5) // 5 rpm, burst 5
+
+// RateLimitMiddleware rejects requests that exceed the per-IP rate limit with
+// HTTP 429.
+func RateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+		if !authLimiter.getLimiter(ip).Allow() {
+			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Flush forwards the Flush call to the underlying ResponseWriter if it supports it,

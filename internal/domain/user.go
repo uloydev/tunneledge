@@ -30,7 +30,7 @@ type AgentProfile struct {
 	UpdatedAt time.Time
 }
 
-type TunnelDefinition struct {
+type TunnelConfig struct {
 	ID             uint
 	AgentProfileID uint
 	Label          string

@@ -2,12 +2,16 @@ package registry
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 	"time"
 
 	pb "tunneledge/proto/registry/v1"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -17,7 +21,8 @@ type GRPCRegistryClient struct {
 }
 
 type tokenCredentials struct {
-	token string
+	token            string
+	requireTransport bool
 }
 
 func (t tokenCredentials) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
@@ -27,19 +32,60 @@ func (t tokenCredentials) GetRequestMetadata(_ context.Context, _ ...string) (ma
 }
 
 func (t tokenCredentials) RequireTransportSecurity() bool {
-	return false
+	return t.requireTransport
+}
+
+// ClientOptions configures the gRPC registry client.
+type ClientOptions struct {
+	// TLSCertFile is the path to a PEM CA certificate used to verify the
+	// registry server's TLS certificate. Set to "insecure" (or leave empty)
+	// to skip verification — development only.
+	TLSCertFile string
+	// AuthToken is the bearer token sent with each RPC. Empty = no auth header.
+	AuthToken string
 }
 
 func NewGRPCRegistryClient(addr string, authToken string) (*GRPCRegistryClient, error) {
-	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	return NewGRPCRegistryClientWithOptions(addr, ClientOptions{
+		TLSCertFile: "insecure",
+		AuthToken:   authToken,
+	})
+}
+
+// NewGRPCRegistryClientWithOptions creates a registry client with explicit TLS config.
+func NewGRPCRegistryClientWithOptions(addr string, opts ClientOptions) (*GRPCRegistryClient, error) {
+	tlsCert := opts.TLSCertFile
+
+	var transportCreds grpc.DialOption
+	useTLS := tlsCert != "" && tlsCert != "insecure"
+
+	if useTLS {
+		caCert, err := os.ReadFile(tlsCert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read registry TLS cert %s: %w", tlsCert, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse registry TLS cert %s", tlsCert)
+		}
+		transportCreds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			RootCAs:    pool,
+			MinVersion: tls.VersionTLS13,
+		}))
+	} else {
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
 
-	if authToken != "" {
-		opts = append(opts, grpc.WithPerRPCCredentials(tokenCredentials{token: authToken}))
+	dialOpts := []grpc.DialOption{transportCreds}
+
+	if opts.AuthToken != "" {
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(tokenCredentials{
+			token:            opts.AuthToken,
+			requireTransport: useTLS,
+		}))
 	}
 
-	conn, err := grpc.NewClient(addr, opts...)
+	conn, err := grpc.NewClient(addr, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to registry: %w", err)
 	}

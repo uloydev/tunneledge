@@ -19,7 +19,7 @@ import (
 )
 
 type activeTunnel struct {
-	tunnel   *domain.Tunnel
+	tunnel   *domain.ActiveTunnel
 	conn     *quic.Conn
 	routeMap map[string]string
 }
@@ -192,7 +192,7 @@ func (g *Gateway) acceptPublicConnections(ctx context.Context, ln net.Listener) 
 	}
 }
 
-func (g *Gateway) addTunnel(tunnel *domain.Tunnel, conn *quic.Conn) {
+func (g *Gateway) addTunnel(tunnel *domain.ActiveTunnel, conn *quic.Conn) {
 	g.mu.Lock()
 	routeMap := tunnel.RouteMap()
 	g.tunnels[tunnel.ID.String()] = &activeTunnel{

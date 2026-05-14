@@ -1,4 +1,4 @@
-package tui
+package agentui
 
 import "github.com/charmbracelet/lipgloss"
 

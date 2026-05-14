@@ -231,6 +231,11 @@ func (a *Agent) connect(ctx context.Context) error {
 	}
 	defer authStream.Close()
 
+	// Send protocol Hello so the gateway can reject incompatible clients early.
+	if err := transport.EncodeHello(authStream, "tunneledge/agent"); err != nil {
+		return fmt.Errorf("failed to send hello: %w", err)
+	}
+
 	if len(a.tunnels) > 0 {
 		return a.authenticateV2(ctx, conn, authStream)
 	}

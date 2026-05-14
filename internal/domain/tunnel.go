@@ -27,7 +27,7 @@ type TunnelRoute struct {
 	LocalAddr string
 }
 
-type Tunnel struct {
+type ActiveTunnel struct {
 	ID          TunnelID
 	AgentID     string
 	Routes      []TunnelRoute
@@ -35,8 +35,8 @@ type Tunnel struct {
 	CreatedAt   time.Time
 }
 
-func NewTunnel(agentID string, routes []TunnelRoute) *Tunnel {
-	return &Tunnel{
+func NewActiveTunnel(agentID string, routes []TunnelRoute) *ActiveTunnel {
+	return &ActiveTunnel{
 		ID:          NewTunnelID(agentID),
 		AgentID:     agentID,
 		Routes:      routes,
@@ -45,7 +45,7 @@ func NewTunnel(agentID string, routes []TunnelRoute) *Tunnel {
 	}
 }
 
-func (t *Tunnel) RouteMap() map[string]string {
+func (t *ActiveTunnel) RouteMap() map[string]string {
 	m := make(map[string]string, len(t.Routes))
 	for _, r := range t.Routes {
 		m[r.Label] = r.LocalAddr

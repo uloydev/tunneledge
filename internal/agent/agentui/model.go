@@ -8,7 +8,7 @@
 // read by a blocking tea.Cmd. The activeStreams map is protected by mu for
 // reads performed outside of Update (none currently), but all writes happen
 // in Update via handleAgentEvent — keeping the mutex as a defensive boundary.
-package tui
+package agentui
 
 import (
 	"context"

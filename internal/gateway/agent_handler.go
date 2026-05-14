@@ -30,12 +30,37 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 		return
 	}
 
-	msgType, err := transport.ReadMessageType(qstream)
+	// First frame must be MsgHello for version negotiation.
+	helloType, err := transport.ReadMessageType(qstream)
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to read message type")
+		logger.Error().Err(err).Msg("failed to read hello message type")
 		conn.CloseWithError(1, "auth failed")
 		return
 	}
+	if helloType == transport.MsgHello {
+		hello, hErr := transport.DecodeHello(qstream)
+		if hErr != nil {
+			logger.Error().Err(hErr).Msg("failed to decode hello frame")
+			conn.CloseWithError(1, "bad hello")
+			return
+		}
+		if hello.Version != transport.ProtocolVersion {
+			logger.Warn().Uint16("client_version", hello.Version).Uint16("server_version", transport.ProtocolVersion).Msg("protocol version mismatch")
+			_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusVersionError, "", "")
+			conn.CloseWithError(1, "unsupported protocol version")
+			return
+		}
+		logger.Debug().Str("client_version", hello.ClientVersion).Msg("hello received")
+		// Read the next message type (the actual auth frame).
+		helloType, err = transport.ReadMessageType(qstream)
+		if err != nil {
+			logger.Error().Err(err).Msg("failed to read auth message type after hello")
+			conn.CloseWithError(1, "auth failed")
+			return
+		}
+	}
+
+	msgType := helloType
 
 	var agentID string
 	var tunnelID string
@@ -92,7 +117,7 @@ func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Con
 		return "", "", "", "", err
 	}
 
-	tunnel := domain.NewTunnel(agentID, []domain.TunnelRoute{{Label: "default"}})
+	tunnel := domain.NewActiveTunnel(agentID, []domain.TunnelRoute{{Label: "default"}})
 	publicHost := g.router.Register(tunnel.ID.String())
 	publicURL := fmt.Sprintf("%s:%s", publicHost, publicPort(g.publicListenAddr))
 	tunnel.PublicHosts["default"] = publicURL
@@ -141,7 +166,7 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 		routes = append(routes, domain.TunnelRoute{Label: t.Label, LocalAddr: t.LocalAddr})
 	}
 
-	tunnel := domain.NewTunnel(agentID, routes)
+	tunnel := domain.NewActiveTunnel(agentID, routes)
 
 	var publicParts []string
 	var localParts []string

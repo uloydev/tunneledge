@@ -1,16 +1,27 @@
-log_level: debug
-log_format: console
-metrics_enabled: true
-metrics_addr: :9090
+log:
+  level: debug
+  format: console
 
-quic_listen_addr: :4433
-public_listen_addr: :443
-base_domain: tunneledge.dev
-registry_addr: localhost:50051
-shutdown_timeout: 15s
-max_streams: 1000
-stream_idle_timeout: 30s
+observability:
+  metrics_enabled: true
+  metrics_addr: :9090
 
-db_driver: postgres
-db_dsn: "host=localhost port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable"
-db_auto_migrate: true
+gateway:
+  quic_listen_addr: :4433
+  public_listen_addr: :443
+  base_domain: tunneledge.dev
+  registry_addr: localhost:50051
+  # registry_tls_cert: /path/to/registry-ca.pem
+  # Set to "insecure" (default) to skip TLS verification for dev.
+  registry_tls_cert: insecure
+  shutdown_timeout: 15s
+  max_streams: 1000
+  stream_idle_timeout: 30s
+
+db:
+  driver: postgres
+  dsn: "host=localhost port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable"
+  auto_migrate: true
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 5m

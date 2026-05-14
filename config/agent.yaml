@@ -1,16 +1,22 @@
-log_level: debug
-log_format: console
-metrics_enabled: true
-metrics_addr: :9092
-gateway_addr: localhost:4433
-token: dev-token
-tunnels:
+log:
+  level: debug
+  format: console
+
+observability:
+  metrics_enabled: true
+  metrics_addr: :9092
+
+agent:
+  gateway_addr: localhost:4433
+  token: dev-token
+  tunnels:
     - label: web
       local_addr: localhost:3000
     - label: api
       local_addr: localhost:8080
-reconnect_delay: 2s
-max_reconnect: 0
-heartbeat_interval: 15s
-quic_timeout: 30s
-stream_idle_timeout: 30s
+  reconnect_delay: 2s
+  max_reconnect: 0
+  heartbeat_interval: 15s
+  quic_timeout: 30s
+  stream_idle_timeout: 30s
+  tls_insecure: true

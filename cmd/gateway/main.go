@@ -33,7 +33,10 @@ func main() {
 
 	authenticator := resolveAuthenticator(cfg)
 
-	registryClient, err := registry.NewGRPCRegistryClient(cfg.Gateway.RegistryAddr, cfg.Gateway.GRPCAuthToken)
+	registryClient, err := registry.NewGRPCRegistryClientWithOptions(cfg.Gateway.RegistryAddr, registry.ClientOptions{
+		TLSCertFile: cfg.Gateway.RegistryTLSCert,
+		AuthToken:   cfg.Gateway.GRPCAuthToken,
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to registry")
 	}
@@ -88,7 +91,11 @@ func main() {
 
 func resolveAuthenticator(cfg *config.Config) auth.Authenticator {
 	if cfg.DB.Driver == "postgres" && cfg.DB.DSN != "" {
-		db, err := pgstore.NewDB(cfg.DB.DSN)
+		db, err := pgstore.NewDB(cfg.DB.DSN, pgstore.DBOptions{
+			MaxOpenConns:    cfg.DB.MaxOpenConns,
+			MaxIdleConns:    cfg.DB.MaxIdleConns,
+			ConnMaxLifetime: cfg.DB.ConnMaxLifetime,
+		})
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to connect to database")
 		}
@@ -105,8 +112,5 @@ func resolveAuthenticator(cfg *config.Config) auth.Authenticator {
 	}
 
 	log.Warn().Msg("using in-memory token store (no database configured)")
-	return auth.NewTokenAuthenticator(map[string]string{
-		"dev-token":   "agent-1",
-		"dev-token-2": "agent-2",
-	})
+	return auth.NewHashedTokenAuthenticator(nil)
 }

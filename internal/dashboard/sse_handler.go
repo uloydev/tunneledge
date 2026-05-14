@@ -19,10 +19,10 @@ import (
 type SSEHandler struct {
 	sessions domain.SessionRepository
 	agents   domain.AgentProfileRepository
-	tunnels  domain.TunnelDefinitionRepository
+	tunnels  domain.TunnelConfigRepository
 }
 
-func NewSSEHandler(sessions domain.SessionRepository, agents domain.AgentProfileRepository, tunnels domain.TunnelDefinitionRepository) *SSEHandler {
+func NewSSEHandler(sessions domain.SessionRepository, agents domain.AgentProfileRepository, tunnels domain.TunnelConfigRepository) *SSEHandler {
 	return &SSEHandler{sessions: sessions, agents: agents, tunnels: tunnels}
 }
 

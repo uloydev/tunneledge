@@ -44,10 +44,10 @@ type AgentProfileRepository interface {
 	Delete(ctx context.Context, id uint) error
 }
 
-type TunnelDefinitionRepository interface {
-	Create(ctx context.Context, tunnel *TunnelDefinition) error
-	GetByID(ctx context.Context, id uint) (*TunnelDefinition, error)
-	ListByAgentProfileID(ctx context.Context, agentProfileID uint) ([]*TunnelDefinition, error)
-	Update(ctx context.Context, tunnel *TunnelDefinition) error
+type TunnelConfigRepository interface {
+	Create(ctx context.Context, tunnel *TunnelConfig) error
+	GetByID(ctx context.Context, id uint) (*TunnelConfig, error)
+	ListByAgentProfileID(ctx context.Context, agentProfileID uint) ([]*TunnelConfig, error)
+	Update(ctx context.Context, tunnel *TunnelConfig) error
 	Delete(ctx context.Context, id uint) error
 }

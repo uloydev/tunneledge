@@ -6,19 +6,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"tunneledge/internal/dashboard"
 	"tunneledge/internal/email"
-	"tunneledge/internal/store/memstore"
 	"tunneledge/internal/store/pgstore"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 
 	"github.com/rs/zerolog/log"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -57,30 +52,17 @@ func main() {
 	}
 
 	if cfg.DB.Driver == "postgres" && cfg.DB.DSN != "" {
-		db, err := gorm.Open(postgres.Open(cfg.DB.DSN), &gorm.Config{
-			Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+		db, err := pgstore.NewDB(cfg.DB.DSN, pgstore.DBOptions{
+			MaxOpenConns:    cfg.DB.MaxOpenConns,
+			MaxIdleConns:    cfg.DB.MaxIdleConns,
+			ConnMaxLifetime: cfg.DB.ConnMaxLifetime,
 		})
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to connect to database")
 		}
 
-		sqlDB, err := db.DB()
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to get sql.DB")
-		}
-		sqlDB.SetMaxOpenConns(cfg.DB.MaxOpenConns)
-		sqlDB.SetMaxIdleConns(cfg.DB.MaxIdleConns)
-		sqlDB.SetConnMaxLifetime(cfg.DB.ConnMaxLifetime)
-
 		if cfg.DB.AutoMigrate {
-			if err := db.AutoMigrate(
-				&pgstore.UserModel{},
-				&pgstore.AgentProfileModel{},
-				&pgstore.TunnelDefinitionModel{},
-				&pgstore.TokenModel{},
-				&pgstore.TunnelSessionModel{},
-				&pgstore.EmailVerificationModel{},
-			); err != nil {
+			if err := pgstore.AutoMigrate(db); err != nil {
 				log.Fatal().Err(err).Msg("failed to run migrations")
 			}
 			log.Info().Msg("database migrations completed")
@@ -89,12 +71,10 @@ func main() {
 		opts.Users = pgstore.NewPGUserRepository(db)
 		opts.Agents = pgstore.NewPGAgentProfileRepository(db)
 		opts.Tokens = pgstore.NewPGTokenRepository(db)
-		opts.Tunnels = pgstore.NewPGTunnelDefinitionRepository(db)
+		opts.Tunnels = pgstore.NewPGTunnelConfigRepository(db)
 		opts.Sessions = pgstore.NewPGSessionRepository(db)
 		opts.Verifications = pgstore.NewPGEmailVerificationRepository(db)
 	} else {
-		log.Warn().Msg("using in-memory stores (not recommended for production)")
-		opts.Sessions = memstore.NewMemorySessionRepository()
 		log.Fatal().Msg("dashboard requires postgres database, set db_driver=postgres and db_dsn")
 	}
 
@@ -117,8 +97,4 @@ func main() {
 	}
 
 	log.Info().Msg("dashboard stopped")
-}
-
-func init() {
-	_ = time.Now() // prevent unused import
 }

@@ -8,11 +8,20 @@ import (
 	"io"
 	"time"
 
-	"github.com/quic-go/quic-go"
 	"tunneledge/pkg/errs"
+
+	"github.com/quic-go/quic-go"
 )
 
 const (
+	// Protocol version constants. Increment ProtocolVersion when making
+	// incompatible wire-format changes.
+	ProtocolVersion uint16 = 2
+
+	// MsgHello is the first frame sent by a connecting agent. It carries the
+	// protocol version so the gateway can reject incompatible clients early,
+	// before spending time on TLS key-exchange validation.
+	MsgHello        byte = 0x00
 	MsgAuth         byte = 0x01
 	MsgAuthResponse byte = 0x02
 	MsgData         byte = 0x03
@@ -22,8 +31,9 @@ const (
 	MsgAuthRespV2   byte = 0x07
 	MsgStreamLabel  byte = 0x08
 
-	AuthStatusOK    byte = 0x00
-	AuthStatusError byte = 0x01
+	AuthStatusOK           byte = 0x00
+	AuthStatusError        byte = 0x01
+	AuthStatusVersionError byte = 0x02 // client protocol version not supported
 
 	maxTokenLen     = 4096
 	maxTunnelIDLen  = 256
@@ -31,7 +41,55 @@ const (
 	maxLabelLen     = 64
 	maxLocalAddrLen = 256
 	maxTunnelCount  = 32
+	maxVersionLen   = 64
 )
+
+// HelloMessage is the connection-level handshake frame. Agents send it as the
+// very first message on the QUIC control stream so the gateway can validate
+// the protocol version before doing any auth work.
+type HelloMessage struct {
+	Version       uint16 // must equal ProtocolVersion
+	ClientVersion string // human-readable agent version string (e.g. "tunneledge/1.2.3")
+}
+
+// EncodeHello writes a MsgHello frame: [0x00][version uint16][clientVer len uint16][clientVer bytes].
+func EncodeHello(w io.Writer, clientVersion string) error {
+	vb := []byte(clientVersion)
+	if len(vb) > maxVersionLen {
+		vb = vb[:maxVersionLen]
+	}
+	buf := make([]byte, 5+len(vb))
+	buf[0] = MsgHello
+	binary.BigEndian.PutUint16(buf[1:3], ProtocolVersion)
+	binary.BigEndian.PutUint16(buf[3:5], uint16(len(vb)))
+	copy(buf[5:], vb)
+	_, err := w.Write(buf)
+	return err
+}
+
+// DecodeHello reads a MsgHello frame from r. Returns an error if the frame is
+// malformed or carries an unsupported protocol version.
+func DecodeHello(r io.Reader) (*HelloMessage, error) {
+	// First byte is already consumed by ReadMessageType — start from version.
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, fmt.Errorf("failed to read hello frame: %w", err)
+	}
+	version := binary.BigEndian.Uint16(header[0:2])
+	cvLen := binary.BigEndian.Uint16(header[2:4])
+	if cvLen > maxVersionLen {
+		return nil, errs.New(errs.CodeInvalidArg, "client version string too long")
+	}
+	var cv string
+	if cvLen > 0 {
+		cvBuf := make([]byte, cvLen)
+		if _, err := io.ReadFull(r, cvBuf); err != nil {
+			return nil, fmt.Errorf("failed to read client version: %w", err)
+		}
+		cv = string(cvBuf)
+	}
+	return &HelloMessage{Version: version, ClientVersion: cv}, nil
+}
 
 type AuthMessage struct {
 	Token string

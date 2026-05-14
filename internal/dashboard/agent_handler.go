@@ -1,26 +1,18 @@
 package dashboard
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"tunneledge/internal/domain"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AgentHandler struct {
-	agents  domain.AgentProfileRepository
-	tokens  domain.TokenRepository
-	tunnels domain.TunnelDefinitionRepository
+	svc *AgentService
 }
 
-func NewAgentHandler(agents domain.AgentProfileRepository, tokens domain.TokenRepository, tunnels domain.TunnelDefinitionRepository) *AgentHandler {
-	return &AgentHandler{agents: agents, tokens: tokens, tunnels: tunnels}
+func NewAgentHandler(svc *AgentService) *AgentHandler {
+	return &AgentHandler{svc: svc}
 }
 
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -41,38 +33,15 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := domain.ValidateLabel(req.AgentID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	rawToken := generateRawToken()
-	hash, err := bcrypt.GenerateFromPassword([]byte(rawToken), bcrypt.DefaultCost)
+	out, err := h.svc.Create(r.Context(), userID, req.Name, req.AgentID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate token")
-		return
-	}
-
-	agent := &domain.AgentProfile{
-		UserID:    userID,
-		Name:      req.Name,
-		AgentID:   req.AgentID,
-		TokenHash: string(hash),
-	}
-
-	if err := h.agents.Create(r.Context(), agent); err != nil {
-		writeError(w, http.StatusConflict, "agent_id already exists")
-		return
-	}
-
-	if err := h.tokens.Create(r.Context(), req.AgentID, string(hash)); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to store token")
+		writeServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, AgentTokenResponse{
-		AgentID: req.AgentID,
-		Token:   rawToken,
+		AgentID: out.Agent.AgentID,
+		Token:   out.RawToken,
 	})
 }
 
@@ -83,7 +52,7 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agents, err := h.agents.ListByUserID(r.Context(), userID)
+	agents, err := h.svc.List(r.Context(), userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list agents")
 		return
@@ -99,7 +68,6 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: a.UpdatedAt,
 		})
 	}
-
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -116,14 +84,9 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), id)
+	agent, err := h.svc.Get(r.Context(), userID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
+		writeServiceError(w, err)
 		return
 	}
 
@@ -149,29 +112,15 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
 	var req UpdateAgentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if req.Name != "" {
-		agent.Name = req.Name
-	}
-
-	if err := h.agents.Update(r.Context(), agent); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update agent")
+	agent, err := h.svc.Update(r.Context(), userID, id, req.Name)
+	if err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
@@ -197,21 +146,8 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	_ = h.tokens.Delete(r.Context(), agent.AgentID)
-
-	if err := h.agents.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to delete agent")
+	if err := h.svc.Delete(r.Context(), userID, id); err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
@@ -233,51 +169,22 @@ func (h *AgentHandler) RotateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := strconv.ParseUint(parts[0], 10, 64)
+	rawID, err := strconv.ParseUint(parts[0], 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid agent id")
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), uint(id))
+	out, err := h.svc.RotateToken(r.Context(), userID, uint(rawID))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
+		writeServiceError(w, err)
 		return
 	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	rawToken := generateRawToken()
-	hash, err := bcrypt.GenerateFromPassword([]byte(rawToken), bcrypt.DefaultCost)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate token")
-		return
-	}
-
-	agent.TokenHash = string(hash)
-	if err := h.agents.Update(r.Context(), agent); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update token")
-		return
-	}
-
-	_ = h.tokens.Delete(r.Context(), agent.AgentID)
-	_ = h.tokens.Create(r.Context(), agent.AgentID, string(hash))
 
 	writeJSON(w, http.StatusOK, AgentTokenResponse{
-		AgentID: agent.AgentID,
-		Token:   rawToken,
+		AgentID: out.AgentID,
+		Token:   out.RawToken,
 	})
-}
-
-func generateRawToken() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("failed to generate random token")
-	}
-	return "te_" + hex.EncodeToString(b)
 }
 
 func parseIDFromPath(path, prefix string) (uint, error) {

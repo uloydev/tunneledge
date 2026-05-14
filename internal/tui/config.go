@@ -7,8 +7,8 @@ import (
 	"tunneledge/internal/tui/screen"
 	"tunneledge/pkg/config"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type configField struct {
@@ -43,15 +43,15 @@ func (c *ConfigScreen) initFields() {
 	cfg := c.bridge.GetConfig()
 
 	c.fields = []configField{
-		c.makeField("Gateway Address", "gateway_addr", cfg.Agent.GatewayAddr),
-		c.makeField("Log Level", "log_level", cfg.Log.Level),
-		c.makeField("Log Format", "log_format", cfg.Log.Format),
-		c.makeField("Metrics Enabled", "metrics_enabled", fmt.Sprintf("%v", cfg.Observability.MetricsEnabled)),
-		c.makeField("Metrics Address", "metrics_addr", cfg.Observability.MetricsAddr),
-		c.makeField("Reconnect Delay", "reconnect_delay", cfg.Agent.ReconnectDelay.String()),
-		c.makeField("Max Reconnect", "max_reconnect", fmt.Sprintf("%d", cfg.Agent.MaxReconnect)),
-		c.makeField("Heartbeat Interval", "heartbeat_interval", cfg.Agent.HeartbeatInterval.String()),
-		c.makeField("QUIC Timeout", "quic_timeout", cfg.Agent.QUICTimeout.String()),
+		c.makeField("Gateway Address", "agent.gateway_addr", cfg.Agent.GatewayAddr),
+		c.makeField("Log Level", "log.level", cfg.Log.Level),
+		c.makeField("Log Format", "log.format", cfg.Log.Format),
+		c.makeField("Metrics Enabled", "observability.metrics_enabled", fmt.Sprintf("%v", cfg.Observability.MetricsEnabled)),
+		c.makeField("Metrics Address", "observability.metrics_addr", cfg.Observability.MetricsAddr),
+		c.makeField("Reconnect Delay", "agent.reconnect_delay", cfg.Agent.ReconnectDelay.String()),
+		c.makeField("Max Reconnect", "agent.max_reconnect", fmt.Sprintf("%d", cfg.Agent.MaxReconnect)),
+		c.makeField("Heartbeat Interval", "agent.heartbeat_interval", cfg.Agent.HeartbeatInterval.String()),
+		c.makeField("QUIC Timeout", "agent.quic_timeout", cfg.Agent.QUICTimeout.String()),
 	}
 }
 
@@ -142,7 +142,7 @@ func (c *ConfigScreen) View() string {
 
 	b.WriteString(styles.BoxTitle.Render("Configuration"))
 	b.WriteString("\n")
-	b.WriteString(divider(c.width-2))
+	b.WriteString(divider(c.width - 2))
 	b.WriteString("\n")
 
 	tableWidth := c.width - 6
@@ -174,7 +174,7 @@ func (c *ConfigScreen) View() string {
 			rowStyle.Render(cursor+" "), label, value))
 	}
 
-	b.WriteString(divider(c.width-2))
+	b.WriteString(divider(c.width - 2))
 
 	if c.saved {
 		b.WriteString("\n")
@@ -185,7 +185,7 @@ func (c *ConfigScreen) View() string {
 	if c.err != "" {
 		b.WriteString("\n")
 		b.WriteString(styles.Box.Render(
-			styles.Error.Render("✗ "+c.err),
+			styles.Error.Render("✗ " + c.err),
 		))
 	} else {
 		b.WriteString("\n")

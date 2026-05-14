@@ -31,12 +31,15 @@ type AgentConfig struct {
 }
 
 type GatewayConfig struct {
-	QUICListenAddr    string        `mapstructure:"quic_listen_addr"`
-	PublicListenAddr  string        `mapstructure:"public_listen_addr"`
-	BaseDomain        string        `mapstructure:"base_domain"`
-	RegistryAddr      string        `mapstructure:"registry_addr"`
-	TLSCertFile       string        `mapstructure:"tls_cert_file"`
-	TLSKeyFile        string        `mapstructure:"tls_key_file"`
+	QUICListenAddr   string `mapstructure:"quic_listen_addr"`
+	PublicListenAddr string `mapstructure:"public_listen_addr"`
+	BaseDomain       string `mapstructure:"base_domain"`
+	RegistryAddr     string `mapstructure:"registry_addr"`
+	TLSCertFile      string `mapstructure:"tls_cert_file"`
+	TLSKeyFile       string `mapstructure:"tls_key_file"`
+	// RegistryTLSCert is the PEM path for verifying the registry gRPC TLS cert.
+	// Leave empty to use system CAs. Set to "insecure" to skip verification (dev only).
+	RegistryTLSCert   string        `mapstructure:"registry_tls_cert"`
 	ShutdownTimeout   time.Duration `mapstructure:"shutdown_timeout"`
 	MaxStreams        int64         `mapstructure:"max_streams"`
 	GRPCAuthToken     string        `mapstructure:"grpc_auth_token"`
@@ -45,6 +48,8 @@ type GatewayConfig struct {
 
 type RegistryConfig struct {
 	GRPCListenAddr  string        `mapstructure:"grpc_listen_addr"`
+	TLSCertFile     string        `mapstructure:"tls_cert_file"`
+	TLSKeyFile      string        `mapstructure:"tls_key_file"`
 	SessionTTL      time.Duration `mapstructure:"session_ttl"`
 	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
 	GRPCAuthToken   string        `mapstructure:"grpc_auth_token"`
@@ -60,9 +65,10 @@ type DashboardConfig struct {
 	SMTPFrom       string        `mapstructure:"smtp_from"`
 }
 
+// LogConfig holds structured logging settings.
 type LogConfig struct {
-	Level  string `mapstructure:"log_level"`
-	Format string `mapstructure:"log_format"`
+	Level  string `mapstructure:"level"`
+	Format string `mapstructure:"format"`
 }
 
 type ObservabilityConfig struct {
@@ -72,24 +78,27 @@ type ObservabilityConfig struct {
 	TracingEndpoint string `mapstructure:"tracing_endpoint"`
 }
 
+// DBConfig holds database connection settings.
 type DBConfig struct {
-	Driver          string        `mapstructure:"db_driver"`
-	DSN             string        `mapstructure:"db_dsn"`
-	MaxOpenConns    int           `mapstructure:"db_max_open_conns"`
-	MaxIdleConns    int           `mapstructure:"db_max_idle_conns"`
-	ConnMaxLifetime time.Duration `mapstructure:"db_conn_max_lifetime"`
-	AutoMigrate     bool          `mapstructure:"db_auto_migrate"`
+	Driver          string        `mapstructure:"driver"`
+	DSN             string        `mapstructure:"dsn"`
+	MaxOpenConns    int           `mapstructure:"max_open_conns"`
+	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+	AutoMigrate     bool          `mapstructure:"auto_migrate"`
 }
 
+// Config is the union of all service configurations. Each binary only populates
+// the section(s) it cares about; unused sections remain at their zero values.
 type Config struct {
 	ServiceName   string              `mapstructure:"service_name"`
-	Log           LogConfig           `mapstructure:",squash"`
-	Observability ObservabilityConfig `mapstructure:",squash"`
-	Agent         AgentConfig         `mapstructure:",squash"`
-	Gateway       GatewayConfig       `mapstructure:",squash"`
-	Registry      RegistryConfig      `mapstructure:",squash"`
-	Dashboard     DashboardConfig     `mapstructure:",squash"`
-	DB            DBConfig            `mapstructure:",squash"`
+	Log           LogConfig           `mapstructure:"log"`
+	Observability ObservabilityConfig `mapstructure:"observability"`
+	Agent         AgentConfig         `mapstructure:"agent"`
+	Gateway       GatewayConfig       `mapstructure:"gateway"`
+	Registry      RegistryConfig      `mapstructure:"registry"`
+	Dashboard     DashboardConfig     `mapstructure:"dashboard"`
+	DB            DBConfig            `mapstructure:"db"`
 }
 
 type ServiceType string
@@ -102,50 +111,54 @@ const (
 )
 
 func defaults(svc ServiceType) {
-	viper.SetDefault("log_level", "info")
-	viper.SetDefault("log_format", "json")
+	// Shared defaults
+	viper.SetDefault("log.level", "info")
+	viper.SetDefault("log.format", "json")
 
-	viper.SetDefault("metrics_enabled", true)
-	viper.SetDefault("metrics_addr", ":9090")
-	viper.SetDefault("tracing_enabled", false)
-	viper.SetDefault("tracing_endpoint", "localhost:4317")
+	viper.SetDefault("observability.metrics_enabled", true)
+	viper.SetDefault("observability.metrics_addr", ":9090")
+	viper.SetDefault("observability.tracing_enabled", false)
+	viper.SetDefault("observability.tracing_endpoint", "localhost:4317")
 
-	viper.SetDefault("db_driver", "memory")
-	viper.SetDefault("db_dsn", "")
-	viper.SetDefault("db_max_open_conns", 10)
-	viper.SetDefault("db_max_idle_conns", 5)
-	viper.SetDefault("db_conn_max_lifetime", 5*time.Minute)
-	viper.SetDefault("db_auto_migrate", true)
+	viper.SetDefault("db.driver", "memory")
+	viper.SetDefault("db.dsn", "")
+	viper.SetDefault("db.max_open_conns", 10)
+	viper.SetDefault("db.max_idle_conns", 5)
+	viper.SetDefault("db.conn_max_lifetime", 5*time.Minute)
+	viper.SetDefault("db.auto_migrate", true)
 
 	switch svc {
 	case ServiceAgent:
-		viper.SetDefault("gateway_addr", "localhost:4433")
-		viper.SetDefault("reconnect_delay", 2*time.Second)
-		viper.SetDefault("max_reconnect", 0)
-		viper.SetDefault("heartbeat_interval", 15*time.Second)
-		viper.SetDefault("quic_timeout", 30*time.Second)
-		viper.SetDefault("tls_insecure", true)
+		viper.SetDefault("agent.gateway_addr", "localhost:4433")
+		viper.SetDefault("agent.reconnect_delay", 2*time.Second)
+		viper.SetDefault("agent.max_reconnect", 0)
+		viper.SetDefault("agent.heartbeat_interval", 15*time.Second)
+		viper.SetDefault("agent.quic_timeout", 30*time.Second)
+		viper.SetDefault("agent.tls_insecure", true)
+		viper.SetDefault("agent.stream_idle_timeout", 30*time.Second)
 	case ServiceGateway:
-		viper.SetDefault("quic_listen_addr", ":4433")
-		viper.SetDefault("public_listen_addr", ":443")
-		viper.SetDefault("base_domain", "tunneledge.dev")
-		viper.SetDefault("registry_addr", "localhost:50051")
-		viper.SetDefault("shutdown_timeout", 15*time.Second)
-		viper.SetDefault("max_streams", int64(1000))
-		viper.SetDefault("grpc_auth_token", "")
+		viper.SetDefault("gateway.quic_listen_addr", ":4433")
+		viper.SetDefault("gateway.public_listen_addr", ":443")
+		viper.SetDefault("gateway.base_domain", "tunneledge.dev")
+		viper.SetDefault("gateway.registry_addr", "localhost:50051")
+		viper.SetDefault("gateway.registry_tls_cert", "insecure")
+		viper.SetDefault("gateway.shutdown_timeout", 15*time.Second)
+		viper.SetDefault("gateway.max_streams", int64(1000))
+		viper.SetDefault("gateway.grpc_auth_token", "")
+		viper.SetDefault("gateway.stream_idle_timeout", 30*time.Second)
 	case ServiceRegistry:
-		viper.SetDefault("grpc_listen_addr", ":50051")
-		viper.SetDefault("session_ttl", 5*time.Minute)
-		viper.SetDefault("cleanup_interval", 30*time.Second)
-		viper.SetDefault("grpc_auth_token", "")
+		viper.SetDefault("registry.grpc_listen_addr", ":50051")
+		viper.SetDefault("registry.session_ttl", 5*time.Minute)
+		viper.SetDefault("registry.cleanup_interval", 30*time.Second)
+		viper.SetDefault("registry.grpc_auth_token", "")
 	case ServiceDashboard:
-		viper.SetDefault("http_listen_addr", ":8080")
-		viper.SetDefault("jwt_secret", "")
-		viper.SetDefault("jwt_ttl", 24*time.Hour)
-		viper.SetDefault("base_url", "http://localhost:8080")
-		viper.SetDefault("smtp_host", "localhost")
-		viper.SetDefault("smtp_port", 1025)
-		viper.SetDefault("smtp_from", "noreply@tunneledge.dev")
+		viper.SetDefault("dashboard.http_listen_addr", ":8080")
+		viper.SetDefault("dashboard.jwt_secret", "")
+		viper.SetDefault("dashboard.jwt_ttl", 24*time.Hour)
+		viper.SetDefault("dashboard.base_url", "http://localhost:8080")
+		viper.SetDefault("dashboard.smtp_host", "localhost")
+		viper.SetDefault("dashboard.smtp_port", 1025)
+		viper.SetDefault("dashboard.smtp_from", "noreply@tunneledge.dev")
 	}
 }
 
@@ -155,12 +168,19 @@ func Load(svc ServiceType, opts ...Option) (*Config, error) {
 		opt(o)
 	}
 
-	viper.SetConfigName(o.configName)
+	// Use service name as config file name unless overridden.
+	configName := o.configName
+	if configName == "" {
+		configName = string(svc)
+	}
+
+	viper.SetConfigName(configName)
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 	viper.AddConfigPath("/etc/tunneledge")
 
+	// TE_LOG_LEVEL=debug maps to log.level via the dot→underscore replacer.
 	viper.SetEnvPrefix("TE")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	viper.AutomaticEnv()
@@ -187,36 +207,43 @@ func Load(svc ServiceType, opts ...Option) (*Config, error) {
 	return &cfg, nil
 }
 
+// SaveConfig is the serializable form of an agent config written to disk.
+// It uses the nested YAML structure that matches Config.
 type SaveConfig struct {
-	LogLevel          string         `yaml:"log_level"`
-	LogFormat         string         `yaml:"log_format"`
-	MetricsEnabled    bool           `yaml:"metrics_enabled"`
-	MetricsAddr       string         `yaml:"metrics_addr"`
-	GatewayAddr       string         `yaml:"gateway_addr"`
-	Token             string         `yaml:"token"`
-	LocalAddr         string         `yaml:"local_addr,omitempty"`
-	Tunnels           []TunnelConfig `yaml:"tunnels,omitempty"`
-	ReconnectDelay    string         `yaml:"reconnect_delay"`
-	MaxReconnect      int            `yaml:"max_reconnect"`
-	HeartbeatInterval string         `yaml:"heartbeat_interval"`
-	QUICTimeout       string         `yaml:"quic_timeout"`
+	Log struct {
+		Level  string `yaml:"level"`
+		Format string `yaml:"format"`
+	} `yaml:"log"`
+	Observability struct {
+		MetricsEnabled bool   `yaml:"metrics_enabled"`
+		MetricsAddr    string `yaml:"metrics_addr"`
+	} `yaml:"observability"`
+	Agent struct {
+		GatewayAddr       string         `yaml:"gateway_addr"`
+		Token             string         `yaml:"token"`
+		LocalAddr         string         `yaml:"local_addr,omitempty"`
+		Tunnels           []TunnelConfig `yaml:"tunnels,omitempty"`
+		ReconnectDelay    string         `yaml:"reconnect_delay"`
+		MaxReconnect      int            `yaml:"max_reconnect"`
+		HeartbeatInterval string         `yaml:"heartbeat_interval"`
+		QUICTimeout       string         `yaml:"quic_timeout"`
+	} `yaml:"agent"`
 }
 
 func Save(cfg *Config, path string) error {
-	sc := SaveConfig{
-		LogLevel:          cfg.Log.Level,
-		LogFormat:         cfg.Log.Format,
-		MetricsEnabled:    cfg.Observability.MetricsEnabled,
-		MetricsAddr:       cfg.Observability.MetricsAddr,
-		GatewayAddr:       cfg.Agent.GatewayAddr,
-		Token:             cfg.Agent.Token,
-		LocalAddr:         cfg.Agent.LocalAddr,
-		Tunnels:           cfg.Agent.Tunnels,
-		ReconnectDelay:    cfg.Agent.ReconnectDelay.String(),
-		MaxReconnect:      cfg.Agent.MaxReconnect,
-		HeartbeatInterval: cfg.Agent.HeartbeatInterval.String(),
-		QUICTimeout:       cfg.Agent.QUICTimeout.String(),
-	}
+	var sc SaveConfig
+	sc.Log.Level = cfg.Log.Level
+	sc.Log.Format = cfg.Log.Format
+	sc.Observability.MetricsEnabled = cfg.Observability.MetricsEnabled
+	sc.Observability.MetricsAddr = cfg.Observability.MetricsAddr
+	sc.Agent.GatewayAddr = cfg.Agent.GatewayAddr
+	sc.Agent.Token = cfg.Agent.Token
+	sc.Agent.LocalAddr = cfg.Agent.LocalAddr
+	sc.Agent.Tunnels = cfg.Agent.Tunnels
+	sc.Agent.ReconnectDelay = cfg.Agent.ReconnectDelay.String()
+	sc.Agent.MaxReconnect = cfg.Agent.MaxReconnect
+	sc.Agent.HeartbeatInterval = cfg.Agent.HeartbeatInterval.String()
+	sc.Agent.QUICTimeout = cfg.Agent.QUICTimeout.String()
 
 	data, err := yaml.Marshal(sc)
 	if err != nil {

@@ -27,7 +27,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - TE_GRPC_LISTEN_ADDR=:50051
+      - TE_REGISTRY_GRPC_LISTEN_ADDR=:50051
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
       - TE_DB_DRIVER=postgres
@@ -54,14 +54,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - TE_QUIC_LISTEN_ADDR=:4433
-      - TE_PUBLIC_LISTEN_ADDR=:443
-      - TE_BASE_DOMAIN=tunneledge.uloy.dev
-      - TE_REGISTRY_ADDR=registry:50051
+      - TE_GATEWAY_QUIC_LISTEN_ADDR=:4433
+      - TE_GATEWAY_PUBLIC_LISTEN_ADDR=:443
+      - TE_GATEWAY_BASE_DOMAIN=tunneledge.uloy.dev
+      - TE_GATEWAY_REGISTRY_ADDR=registry:50051
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
-      - TE_METRICS_ENABLED=true
-      - TE_METRICS_ADDR=:9090
+      - TE_OBSERVABILITY_METRICS_ENABLED=true
+      - TE_OBSERVABILITY_METRICS_ADDR=:9090
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
@@ -101,13 +101,13 @@ services:
       mailpit:
         condition: service_healthy
     environment:
-      - TE_HTTP_LISTEN_ADDR=:8080
-      - TE_JWT_SECRET=change-me-in-production
-      - TE_JWT_TTL=24h
-      - TE_BASE_URL=http://localhost:8082
-      - TE_SMTP_HOST=mailpit
-      - TE_SMTP_PORT=1025
-      - TE_SMTP_FROM=noreply@tunneledge.dev
+      - TE_DASHBOARD_HTTP_LISTEN_ADDR=:8080
+      - TE_DASHBOARD_JWT_SECRET=change-me-in-production
+      - TE_DASHBOARD_JWT_TTL=24h
+      - TE_DASHBOARD_BASE_URL=http://localhost:8082
+      - TE_DASHBOARD_SMTP_HOST=mailpit
+      - TE_DASHBOARD_SMTP_PORT=1025
+      - TE_DASHBOARD_SMTP_FROM=noreply@tunneledge.dev
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
       - TE_DB_DRIVER=postgres

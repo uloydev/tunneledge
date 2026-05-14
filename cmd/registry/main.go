@@ -10,7 +10,6 @@ import (
 
 	"tunneledge/internal/domain"
 	"tunneledge/internal/registry"
-	"tunneledge/internal/store"
 	"tunneledge/internal/store/memstore"
 	"tunneledge/internal/store/pgstore"
 	"tunneledge/pkg/config"
@@ -86,24 +85,24 @@ func main() {
 
 func resolveSessionStore(cfg *config.Config) domain.SessionRepository {
 	if cfg.DB.Driver == "postgres" && cfg.DB.DSN != "" {
-		dbStore, err := store.NewStore(cfg.DB.DSN)
+		db, err := pgstore.NewDB(cfg.DB.DSN, pgstore.DBOptions{
+			MaxOpenConns:    cfg.DB.MaxOpenConns,
+			MaxIdleConns:    cfg.DB.MaxIdleConns,
+			ConnMaxLifetime: cfg.DB.ConnMaxLifetime,
+		})
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to connect to database")
 		}
 
 		if cfg.DB.AutoMigrate {
-			if err := dbStore.AutoMigrate(); err != nil {
+			if err := pgstore.AutoMigrate(db); err != nil {
 				log.Fatal().Err(err).Msg("failed to run auto migrations")
 			}
 			log.Info().Msg("database migrations completed")
 		}
 
-		if err := dbStore.SeedDefaultTokens(); err != nil {
-			log.Fatal().Err(err).Msg("failed to seed default tokens")
-		}
-
 		log.Info().Msg("using PostgreSQL session store")
-		return pgstore.NewPGSessionRepository(dbStore.GetDB())
+		return pgstore.NewPGSessionRepository(db)
 	}
 
 	log.Warn().Msg("using in-memory session store")

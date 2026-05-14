@@ -33,8 +33,17 @@ type Stream struct {
 	ID        string
 	TunnelID  string
 	CreatedAt time.Time
-	State     State
-	stream    io.ReadWriteCloser
+
+	mu     sync.Mutex
+	state  State
+	stream io.ReadWriteCloser
+}
+
+// State returns the current state of the stream, safe for concurrent access.
+func (s *Stream) State() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
 }
 
 func (s *Stream) Read(p []byte) (int, error) {
@@ -46,10 +55,13 @@ func (s *Stream) Write(p []byte) (int, error) {
 }
 
 func (s *Stream) Close() error {
-	if s.State == StateClosed {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.state == StateClosed {
 		return nil
 	}
-	s.State = StateClosed
+	s.state = StateClosed
 	return s.stream.Close()
 }
 
@@ -69,7 +81,7 @@ func (m *Manager) Open(tunnelID string, raw io.ReadWriteCloser) *Stream {
 		ID:        generateStreamID(),
 		TunnelID:  tunnelID,
 		CreatedAt: time.Now(),
-		State:     StateOpen,
+		state:     StateOpen,
 		stream:    raw,
 	}
 

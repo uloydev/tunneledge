@@ -5,17 +5,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"tunneledge/internal/domain"
 )
 
 type TunnelHandler struct {
-	tunnels domain.TunnelDefinitionRepository
-	agents  domain.AgentProfileRepository
+	svc *TunnelService
 }
 
-func NewTunnelHandler(tunnels domain.TunnelDefinitionRepository, agents domain.AgentProfileRepository) *TunnelHandler {
-	return &TunnelHandler{tunnels: tunnels, agents: agents}
+func NewTunnelHandler(svc *TunnelService) *TunnelHandler {
+	return &TunnelHandler{svc: svc}
 }
 
 func (h *TunnelHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -31,41 +28,15 @@ func (h *TunnelHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), agentID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
 	var req CreateTunnelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if err := domain.ValidateLabel(req.Label); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if err := domain.ValidateLocalAddr(req.LocalAddr); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	tunnel := &domain.TunnelDefinition{
-		AgentProfileID: agentID,
-		Label:          req.Label,
-		LocalAddr:      req.LocalAddr,
-	}
-
-	if err := h.tunnels.Create(r.Context(), tunnel); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create tunnel")
+	tunnel, err := h.svc.Create(r.Context(), userID, agentID, req.Label, req.LocalAddr)
+	if err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
@@ -91,20 +62,9 @@ func (h *TunnelHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), agentID)
+	tunnels, err := h.svc.List(r.Context(), userID, agentID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	tunnels, err := h.tunnels.ListByAgentProfileID(r.Context(), agentID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list tunnels")
+		writeServiceError(w, err)
 		return
 	}
 
@@ -118,7 +78,6 @@ func (h *TunnelHandler) List(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: t.UpdatedAt,
 		})
 	}
-
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -135,25 +94,9 @@ func (h *TunnelHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), agentID)
+	tunnel, err := h.svc.Get(r.Context(), userID, agentID, tunnelID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	tunnel, err := h.tunnels.GetByID(r.Context(), tunnelID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tunnel not found")
-		return
-	}
-
-	if tunnel.AgentProfileID != agentID {
-		writeError(w, http.StatusForbidden, "access denied")
+		writeServiceError(w, err)
 		return
 	}
 
@@ -179,52 +122,15 @@ func (h *TunnelHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), agentID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	tunnel, err := h.tunnels.GetByID(r.Context(), tunnelID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tunnel not found")
-		return
-	}
-
-	if tunnel.AgentProfileID != agentID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
 	var req UpdateTunnelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if req.Label != "" {
-		if err := domain.ValidateLabel(req.Label); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		tunnel.Label = req.Label
-	}
-
-	if req.LocalAddr != "" {
-		if err := domain.ValidateLocalAddr(req.LocalAddr); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		tunnel.LocalAddr = req.LocalAddr
-	}
-
-	if err := h.tunnels.Update(r.Context(), tunnel); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update tunnel")
+	tunnel, err := h.svc.Update(r.Context(), userID, agentID, tunnelID, req.Label, req.LocalAddr)
+	if err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
@@ -250,37 +156,14 @@ func (h *TunnelHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.agents.GetByID(r.Context(), agentID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-
-	if agent.UserID != userID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	tunnel, err := h.tunnels.GetByID(r.Context(), tunnelID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tunnel not found")
-		return
-	}
-
-	if tunnel.AgentProfileID != agentID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	if err := h.tunnels.Delete(r.Context(), tunnelID); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to delete tunnel")
+	if err := h.svc.Delete(r.Context(), userID, agentID, tunnelID); err != nil {
+		writeServiceError(w, err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// parseAgentID extracts agent ID from paths like /api/v1/agents/{id}/tunnels
 func (h *TunnelHandler) parseAgentID(path string) (uint, error) {
 	trimmed := strings.TrimPrefix(path, "/api/v1/agents/")
 	parts := strings.Split(trimmed, "/")
@@ -291,7 +174,6 @@ func (h *TunnelHandler) parseAgentID(path string) (uint, error) {
 	return uint(id), err
 }
 
-// parseAgentAndTunnelID extracts IDs from paths like /api/v1/agents/{id}/tunnels/{tid}
 func (h *TunnelHandler) parseAgentAndTunnelID(path string) (uint, uint, error) {
 	trimmed := strings.TrimPrefix(path, "/api/v1/agents/")
 	parts := strings.Split(trimmed, "/")

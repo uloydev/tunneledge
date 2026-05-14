@@ -24,7 +24,7 @@ func TestManager_OpenClose(t *testing.T) {
 	s := mgr.Open("t-1", &mockReadWriteCloser{})
 	assert.NotEmpty(t, s.ID)
 	assert.Equal(t, "t-1", s.TunnelID)
-	assert.Equal(t, StateOpen, s.State)
+	assert.Equal(t, StateOpen, s.State())
 	assert.Equal(t, 1, mgr.Count())
 
 	got, err := mgr.Get(s.ID)

@@ -40,7 +40,7 @@ func TestTunnel(t *testing.T) {
 		{Label: "web", LocalAddr: "localhost:3000"},
 		{Label: "api", LocalAddr: "localhost:8080"},
 	}
-	tunnel := NewTunnel("agent-1", routes)
+	tunnel := NewActiveTunnel("agent-1", routes)
 
 	assert.Equal(t, TunnelID("t-agent-1"), tunnel.ID)
 	assert.Equal(t, "agent-1", tunnel.AgentID)

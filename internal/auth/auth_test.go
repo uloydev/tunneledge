@@ -9,12 +9,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func mustHash(t *testing.T, token string) string {
+	t.Helper()
+	h, err := HashToken(token)
+	require.NoError(t, err)
+	return h
+}
+
 func TestTokenAuthenticator_Authenticate(t *testing.T) {
-	tokens := map[string]string{
-		"valid-token-1": "agent-1",
-		"valid-token-2": "agent-2",
+	hashes := map[string]string{
+		mustHash(t, "valid-token-1"): "agent-1",
+		mustHash(t, "valid-token-2"): "agent-2",
 	}
-	auth := NewTokenAuthenticator(tokens)
+	a := NewHashedTokenAuthenticator(hashes)
 
 	tests := []struct {
 		name     string
@@ -31,7 +38,7 @@ func TestTokenAuthenticator_Authenticate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id, err := auth.Authenticate(tt.token)
+			id, err := a.Authenticate(tt.token)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Equal(t, tt.wantCode, errs.GetCode(err))
@@ -44,42 +51,33 @@ func TestTokenAuthenticator_Authenticate(t *testing.T) {
 }
 
 func TestTokenAuthenticator_AddRemove(t *testing.T) {
-	auth := NewTokenAuthenticator(map[string]string{})
+	a := NewHashedTokenAuthenticator(nil)
 
-	_, err := auth.Authenticate("my-token")
+	_, err := a.Authenticate("my-token")
 	assert.Error(t, err)
 
-	auth.AddToken("my-token", "agent-new")
-	id, err := auth.Authenticate("my-token")
+	hash := mustHash(t, "my-token")
+	a.AddHashedToken(hash, "agent-new")
+	id, err := a.Authenticate("my-token")
 	assert.NoError(t, err)
 	assert.Equal(t, "agent-new", id)
 
-	auth.RemoveToken("my-token")
-	_, err = auth.Authenticate("my-token")
+	a.RemoveHashedToken("agent-new")
+	_, err = a.Authenticate("my-token")
 	assert.Error(t, err)
 }
 
-func TestLoadTokensFromSlice(t *testing.T) {
-	tests := []struct {
-		name    string
-		pairs   []string
-		wantLen int
-		wantErr bool
-	}{
-		{"valid pairs", []string{"t1", "a1", "t2", "a2"}, 2, false},
-		{"empty", []string{}, 0, false},
-		{"odd count", []string{"t1"}, 0, true},
+func TestTokenAuthenticator_HMACPrefilter(t *testing.T) {
+	// Add 50 fake entries to verify the pre-filter eliminates most bcrypt calls.
+	a := NewHashedTokenAuthenticator(nil)
+	for i := 0; i < 50; i++ {
+		h := mustHash(t, "noise-token")
+		a.AddHashedToken(h, "noise-agent")
 	}
+	real := mustHash(t, "real-token")
+	a.AddHashedToken(real, "real-agent")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tokens, err := LoadTokensFromSlice(tt.pairs)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Len(t, tokens, tt.wantLen)
-			}
-		})
-	}
+	id, err := a.Authenticate("real-token")
+	require.NoError(t, err)
+	assert.Equal(t, "real-agent", id)
 }

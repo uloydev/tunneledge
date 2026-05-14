@@ -9,15 +9,15 @@ import (
 	"gorm.io/gorm"
 )
 
-type PGTunnelDefinitionRepository struct {
+type PGTunnelConfigRepository struct {
 	db *gorm.DB
 }
 
-func NewPGTunnelDefinitionRepository(db *gorm.DB) *PGTunnelDefinitionRepository {
-	return &PGTunnelDefinitionRepository{db: db}
+func NewPGTunnelConfigRepository(db *gorm.DB) *PGTunnelConfigRepository {
+	return &PGTunnelConfigRepository{db: db}
 }
 
-func (r *PGTunnelDefinitionRepository) Create(ctx context.Context, tunnel *domain.TunnelDefinition) error {
+func (r *PGTunnelConfigRepository) Create(ctx context.Context, tunnel *domain.TunnelConfig) error {
 	m := &TunnelDefinitionModel{
 		AgentProfileID: tunnel.AgentProfileID,
 		Label:          tunnel.Label,
@@ -32,7 +32,7 @@ func (r *PGTunnelDefinitionRepository) Create(ctx context.Context, tunnel *domai
 	return nil
 }
 
-func (r *PGTunnelDefinitionRepository) GetByID(ctx context.Context, id uint) (*domain.TunnelDefinition, error) {
+func (r *PGTunnelConfigRepository) GetByID(ctx context.Context, id uint) (*domain.TunnelConfig, error) {
 	var m TunnelDefinitionModel
 	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
 		return nil, fmt.Errorf("tunnel definition %d not found: %w", id, err)
@@ -40,20 +40,20 @@ func (r *PGTunnelDefinitionRepository) GetByID(ctx context.Context, id uint) (*d
 	return modelToTunnelDef(&m), nil
 }
 
-func (r *PGTunnelDefinitionRepository) ListByAgentProfileID(ctx context.Context, agentProfileID uint) ([]*domain.TunnelDefinition, error) {
+func (r *PGTunnelConfigRepository) ListByAgentProfileID(ctx context.Context, agentProfileID uint) ([]*domain.TunnelConfig, error) {
 	var models []TunnelDefinitionModel
 	if err := r.db.WithContext(ctx).Where("agent_profile_id = ?", agentProfileID).Find(&models).Error; err != nil {
 		return nil, err
 	}
 
-	result := make([]*domain.TunnelDefinition, 0, len(models))
+	result := make([]*domain.TunnelConfig, 0, len(models))
 	for i := range models {
 		result = append(result, modelToTunnelDef(&models[i]))
 	}
 	return result, nil
 }
 
-func (r *PGTunnelDefinitionRepository) Update(ctx context.Context, tunnel *domain.TunnelDefinition) error {
+func (r *PGTunnelConfigRepository) Update(ctx context.Context, tunnel *domain.TunnelConfig) error {
 	result := r.db.WithContext(ctx).Model(&TunnelDefinitionModel{}).Where("id = ?", tunnel.ID).
 		Updates(map[string]interface{}{
 			"label":      tunnel.Label,
@@ -65,7 +65,7 @@ func (r *PGTunnelDefinitionRepository) Update(ctx context.Context, tunnel *domai
 	return result.Error
 }
 
-func (r *PGTunnelDefinitionRepository) Delete(ctx context.Context, id uint) error {
+func (r *PGTunnelConfigRepository) Delete(ctx context.Context, id uint) error {
 	result := r.db.WithContext(ctx).Delete(&TunnelDefinitionModel{}, id)
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("tunnel definition %d not found", id)
@@ -73,8 +73,8 @@ func (r *PGTunnelDefinitionRepository) Delete(ctx context.Context, id uint) erro
 	return result.Error
 }
 
-func modelToTunnelDef(m *TunnelDefinitionModel) *domain.TunnelDefinition {
-	return &domain.TunnelDefinition{
+func modelToTunnelDef(m *TunnelDefinitionModel) *domain.TunnelConfig {
+	return &domain.TunnelConfig{
 		ID:             m.ID,
 		AgentProfileID: m.AgentProfileID,
 		Label:          m.Label,
@@ -84,4 +84,4 @@ func modelToTunnelDef(m *TunnelDefinitionModel) *domain.TunnelDefinition {
 	}
 }
 
-var _ domain.TunnelDefinitionRepository = (*PGTunnelDefinitionRepository)(nil)
+var _ domain.TunnelConfigRepository = (*PGTunnelConfigRepository)(nil)

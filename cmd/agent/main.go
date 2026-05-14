@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"tunneledge/internal/agent"
-	agentui "tunneledge/internal/agent/tui"
+	agentui "tunneledge/internal/agent/agentui"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
