@@ -27,18 +27,20 @@ type AgentConfig struct {
 	TLSCAFile         string         `mapstructure:"tls_ca_file"`
 	TLSInsecure       bool           `mapstructure:"tls_insecure"`
 	APIURL            string         `mapstructure:"api_url"`
+	StreamIdleTimeout time.Duration  `mapstructure:"stream_idle_timeout"`
 }
 
 type GatewayConfig struct {
-	QUICListenAddr   string        `mapstructure:"quic_listen_addr"`
-	PublicListenAddr string        `mapstructure:"public_listen_addr"`
-	BaseDomain       string        `mapstructure:"base_domain"`
-	RegistryAddr     string        `mapstructure:"registry_addr"`
-	TLSCertFile      string        `mapstructure:"tls_cert_file"`
-	TLSKeyFile       string        `mapstructure:"tls_key_file"`
-	ShutdownTimeout  time.Duration `mapstructure:"shutdown_timeout"`
-	MaxStreams       int64         `mapstructure:"max_streams"`
-	GRPCAuthToken    string        `mapstructure:"grpc_auth_token"`
+	QUICListenAddr    string        `mapstructure:"quic_listen_addr"`
+	PublicListenAddr  string        `mapstructure:"public_listen_addr"`
+	BaseDomain        string        `mapstructure:"base_domain"`
+	RegistryAddr      string        `mapstructure:"registry_addr"`
+	TLSCertFile       string        `mapstructure:"tls_cert_file"`
+	TLSKeyFile        string        `mapstructure:"tls_key_file"`
+	ShutdownTimeout   time.Duration `mapstructure:"shutdown_timeout"`
+	MaxStreams        int64         `mapstructure:"max_streams"`
+	GRPCAuthToken     string        `mapstructure:"grpc_auth_token"`
+	StreamIdleTimeout time.Duration `mapstructure:"stream_idle_timeout"`
 }
 
 type RegistryConfig struct {

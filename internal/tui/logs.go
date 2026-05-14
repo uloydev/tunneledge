@@ -6,8 +6,9 @@ import (
 	"time"
 
 	"tunneledge/internal/tui/screen"
-	"github.com/charmbracelet/lipgloss"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type LogsScreen struct {

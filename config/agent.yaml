@@ -13,3 +13,4 @@ reconnect_delay: 2s
 max_reconnect: 0
 heartbeat_interval: 15s
 quic_timeout: 30s
+stream_idle_timeout: 30s

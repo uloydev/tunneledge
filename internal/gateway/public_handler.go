@@ -85,7 +85,7 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 	logger = logger.With().Str("stream_id", s.ID).Logger()
 	logger.Info().Msg("stream opened")
 
-	result, err := relay.Bidirectional(ctx, conn, qstream)
+	result, err := relay.BidirectionalWithIdleTimeout(ctx, conn, qstream, g.streamIdleTimeout, nil)
 	if err != nil {
 		logger.Debug().Err(err).Msg("relay ended with error")
 	}

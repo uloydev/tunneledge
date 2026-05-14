@@ -25,31 +25,33 @@ type activeTunnel struct {
 }
 
 type Gateway struct {
-	mu               sync.RWMutex
-	tunnels          map[string]*activeTunnel
-	router           *TunnelRouter
-	streamManager    *stream.Manager
-	authenticator    auth.Authenticator
-	registryClient   domain.RegistryClient
-	metrics          *metrics.Metrics
-	quicListenAddr   string
-	publicListenAddr string
-	baseDomain       string
-	tlsCertFile      string
-	tlsKeyFile       string
-	maxStreams       int64
+	mu                sync.RWMutex
+	tunnels           map[string]*activeTunnel
+	router            *TunnelRouter
+	streamManager     *stream.Manager
+	authenticator     auth.Authenticator
+	registryClient    domain.RegistryClient
+	metrics           *metrics.Metrics
+	quicListenAddr    string
+	publicListenAddr  string
+	baseDomain        string
+	tlsCertFile       string
+	tlsKeyFile        string
+	maxStreams        int64
+	streamIdleTimeout time.Duration
 }
 
 type Options struct {
-	QUICListenAddr   string
-	PublicListenAddr string
-	BaseDomain       string
-	TLSCertFile      string
-	TLSKeyFile       string
-	MaxStreams       int64
-	Authenticator    auth.Authenticator
-	RegistryClient   domain.RegistryClient
-	Metrics          *metrics.Metrics
+	QUICListenAddr    string
+	PublicListenAddr  string
+	BaseDomain        string
+	TLSCertFile       string
+	TLSKeyFile        string
+	MaxStreams        int64
+	StreamIdleTimeout time.Duration
+	Authenticator     auth.Authenticator
+	RegistryClient    domain.RegistryClient
+	Metrics           *metrics.Metrics
 }
 
 func NewGateway(opts Options) (*Gateway, error) {
@@ -61,19 +63,28 @@ func NewGateway(opts Options) (*Gateway, error) {
 	}
 
 	return &Gateway{
-		tunnels:          make(map[string]*activeTunnel),
-		router:           NewTunnelRouter(opts.BaseDomain),
-		streamManager:    stream.NewManager(),
-		authenticator:    opts.Authenticator,
-		registryClient:   opts.RegistryClient,
-		metrics:          opts.Metrics,
-		quicListenAddr:   opts.QUICListenAddr,
-		publicListenAddr: opts.PublicListenAddr,
-		baseDomain:       opts.BaseDomain,
-		tlsCertFile:      opts.TLSCertFile,
-		tlsKeyFile:       opts.TLSKeyFile,
-		maxStreams:       opts.MaxStreams,
+		tunnels:           make(map[string]*activeTunnel),
+		router:            NewTunnelRouter(opts.BaseDomain),
+		streamManager:     stream.NewManager(),
+		authenticator:     opts.Authenticator,
+		registryClient:    opts.RegistryClient,
+		metrics:           opts.Metrics,
+		quicListenAddr:    opts.QUICListenAddr,
+		publicListenAddr:  opts.PublicListenAddr,
+		baseDomain:        opts.BaseDomain,
+		tlsCertFile:       opts.TLSCertFile,
+		tlsKeyFile:        opts.TLSKeyFile,
+		maxStreams:        opts.MaxStreams,
+		streamIdleTimeout: streamIdleTimeout(opts.StreamIdleTimeout),
 	}, nil
+}
+
+// streamIdleTimeout returns v when positive, otherwise the safe default of 30s.
+func streamIdleTimeout(v time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return 30 * time.Second
 }
 
 func (g *Gateway) Run(ctx context.Context) error {

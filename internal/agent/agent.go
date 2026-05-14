@@ -29,6 +29,7 @@ type Agent struct {
 	reconnectDelay    time.Duration
 	maxReconnect      int
 	heartbeatInterval time.Duration
+	streamIdleTimeout time.Duration
 	tlsCAFile         string
 	tlsInsecure       bool
 
@@ -53,6 +54,7 @@ type Options struct {
 	ReconnectDelay    time.Duration
 	MaxReconnect      int
 	HeartbeatInterval time.Duration
+	StreamIdleTimeout time.Duration
 	Metrics           *metrics.Metrics
 	TLSCAFile         string
 	TLSInsecure       bool
@@ -76,6 +78,7 @@ func NewAgent(opts Options) *Agent {
 		reconnectDelay:    opts.ReconnectDelay,
 		maxReconnect:      opts.MaxReconnect,
 		heartbeatInterval: opts.HeartbeatInterval,
+		streamIdleTimeout: agentStreamIdleTimeout(opts.StreamIdleTimeout),
 		metrics:           opts.Metrics,
 		publicURLs:        make(map[string]string),
 		tlsCAFile:         opts.TLSCAFile,
@@ -83,6 +86,14 @@ func NewAgent(opts Options) *Agent {
 		reconnectCh:       make(chan struct{}, 1),
 		eventCh:           opts.EventCh,
 	}
+}
+
+// agentStreamIdleTimeout returns v when positive, otherwise the safe default of 30s.
+func agentStreamIdleTimeout(v time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return 30 * time.Second
 }
 
 // emitEvent sends ev to the TUI event channel without blocking.
@@ -394,9 +405,10 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 		a.metrics.ActiveStreams.Inc()
 	}
 
-	// BidirectionalWithCallback tracks per-stream bytes and accumulates into
-	// the agent's atomic totals so the telemetry loop can compute deltas.
-	result, relayErr := relay.BidirectionalWithCallback(ctx, qstream, tcpConn, func(direction string, n int) {
+	// BidirectionalWithIdleTimeout tracks per-stream bytes, accumulates into
+	// the agent's atomic totals for telemetry, and closes idle streams after
+	// a.streamIdleTimeout of inactivity.
+	result, relayErr := relay.BidirectionalWithIdleTimeout(ctx, qstream, tcpConn, a.streamIdleTimeout, func(direction string, n int) {
 		switch direction {
 		case "sent": // qstream → tcpConn (data received from gateway)
 			a.rxTotal.Add(int64(n))
