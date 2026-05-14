@@ -47,7 +47,7 @@ services:
       dockerfile: deployments/docker/Dockerfile.gateway
     ports:
       - "4433:4433/udp"
-      - "443:443"
+      - "5443:443"
     depends_on:
       registry:
         condition: service_healthy
@@ -56,7 +56,7 @@ services:
     environment:
       - TE_QUIC_LISTEN_ADDR=:4433
       - TE_PUBLIC_LISTEN_ADDR=:443
-      - TE_BASE_DOMAIN=tunneledge.dev
+      - TE_BASE_DOMAIN=tunneledge.uloy.dev
       - TE_REGISTRY_ADDR=registry:50051
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
@@ -80,7 +80,7 @@ services:
     command:
       - --gateway-addr=gateway:4433
       - --token=dev-token
-      - --tunnel=web=echo:6666
+      # - --tunnel=web=echo:6666
       - --tunnel=api=http-echo:8080
     networks:
       - tunneledge
@@ -108,16 +108,16 @@ services:
       dockerfile: deployments/docker/Dockerfile.http-echo
     environment:
       - TE_LISTEN_ADDR=:8080
-    ports:
-      - "8080:8080"
+    # ports:
+    #   - "8080:8080"
     networks:
       - tunneledge
 
   echo:
     image: alpine/socat
     command: TCP-LISTEN:6666,fork EXEC:"/bin/cat"
-    ports:
-      - "6666:6666"
+    # ports:
+    #   - "6666:6666"
     networks:
       - tunneledge
 
