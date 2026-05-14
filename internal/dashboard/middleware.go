@@ -168,3 +168,11 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+// Flush forwards the Flush call to the underlying ResponseWriter if it supports it,
+// preserving http.Flusher compatibility required for SSE.
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
