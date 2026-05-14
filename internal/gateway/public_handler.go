@@ -55,6 +55,12 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 		Str("client_addr", conn.RemoteAddr().String()).
 		Logger()
 
+	if g.maxStreams > 0 && int64(g.streamManager.CountByTunnel(tunnelID)) >= g.maxStreams {
+		logger.Warn().Int64("max_streams", g.maxStreams).Msg("stream limit reached")
+		conn.Close()
+		return
+	}
+
 	qstream, err := at.conn.OpenStreamSync(ctx)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to open QUIC stream")
@@ -87,8 +93,8 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 	if g.metrics != nil {
 		g.metrics.ActiveStreams.Dec()
 		g.metrics.StreamDuration.Observe(time.Since(s.CreatedAt).Seconds())
-		g.metrics.BytesForwarded.WithLabelValues("sent", tunnelID).Add(float64(result.Stats.GetSent()))
-		g.metrics.BytesForwarded.WithLabelValues("received", tunnelID).Add(float64(result.Stats.GetReceived()))
+		g.metrics.BytesForwarded.WithLabelValues("sent").Add(float64(result.Stats.GetSent()))
+		g.metrics.BytesForwarded.WithLabelValues("received").Add(float64(result.Stats.GetReceived()))
 	}
 
 	logger.Info().Int64("sent", result.Stats.GetSent()).Int64("received", result.Stats.GetReceived()).Msg("stream closed")

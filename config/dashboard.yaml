@@ -1,0 +1,19 @@
+log_level: debug
+log_format: console
+
+http_listen_addr: :8080
+jwt_secret: "change-me-in-production-use-a-strong-secret"
+jwt_ttl: 24h
+base_url: "http://localhost:8080"
+
+# SMTP (Mailpit for dev)
+smtp_host: localhost
+smtp_port: 1025
+smtp_from: "noreply@tunneledge.dev"
+
+db_driver: postgres
+db_dsn: "host=localhost port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable"
+db_auto_migrate: true
+db_max_open_conns: 10
+db_max_idle_conns: 5
+db_conn_max_lifetime: 5m

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${TE_BENCH_HOST:-api-agent-1.tunneledge.dev}"
+HOST="${TE_BENCH_HOST:-api-agent-1.tunneledge.uloy.dev}"
 PORT="${TE_BENCH_PORT:-443}"
 TIMEOUT_SEC="${TE_BENCH_TIMEOUT:-360}"   # Increased from 15 to 30 for concurrent load
-CONCURRENT="${TE_BENCH_CONCURRENT:-500}"
+CONCURRENT="${TE_BENCH_CONCURRENT:-100}"
 
 if ! command -v k6 &>/dev/null; then
     echo "error: 'k6' is not installed — install from https://k6.io/docs/get-started/installation/"
@@ -53,7 +53,7 @@ export const options = {
             startVUs: 0,
             stages: [
                 { duration: '10s', target: parseInt(__ENV.CONCURRENT) }, // Ramp up
-                { duration: '15s', target: parseInt(__ENV.CONCURRENT) }, // Sustain peak load
+                { duration: '5s', target: parseInt(__ENV.CONCURRENT) }, // Sustain peak load
             ],
             gracefulStop: '5s',
         },

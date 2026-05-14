@@ -16,8 +16,30 @@ type GRPCRegistryClient struct {
 	conn   *grpc.ClientConn
 }
 
-func NewGRPCRegistryClient(addr string) (*GRPCRegistryClient, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+type tokenCredentials struct {
+	token string
+}
+
+func (t tokenCredentials) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
+	return map[string]string{
+		"authorization": "Bearer " + t.token,
+	}, nil
+}
+
+func (t tokenCredentials) RequireTransportSecurity() bool {
+	return false
+}
+
+func NewGRPCRegistryClient(addr string, authToken string) (*GRPCRegistryClient, error) {
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	if authToken != "" {
+		opts = append(opts, grpc.WithPerRPCCredentials(tokenCredentials{token: authToken}))
+	}
+
+	conn, err := grpc.NewClient(addr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to registry: %w", err)
 	}

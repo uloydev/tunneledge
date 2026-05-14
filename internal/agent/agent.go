@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -27,11 +28,14 @@ type Agent struct {
 	reconnectDelay    time.Duration
 	maxReconnect      int
 	heartbeatInterval time.Duration
+	tlsCAFile         string
+	tlsInsecure       bool
 
-	mu        sync.RWMutex
-	conn      *quic.Conn
-	tunnelID  string
-	publicURLs map[string]string
+	mu          sync.RWMutex
+	conn        *quic.Conn
+	tunnelID    string
+	publicURLs  map[string]string
+	reconnectCh chan struct{}
 }
 
 type Options struct {
@@ -42,6 +46,8 @@ type Options struct {
 	MaxReconnect      int
 	HeartbeatInterval time.Duration
 	Metrics           *metrics.Metrics
+	TLSCAFile         string
+	TLSInsecure       bool
 }
 
 func NewAgent(opts Options) *Agent {
@@ -60,6 +66,9 @@ func NewAgent(opts Options) *Agent {
 		heartbeatInterval: opts.HeartbeatInterval,
 		metrics:           opts.Metrics,
 		publicURLs:        make(map[string]string),
+		tlsCAFile:         opts.TLSCAFile,
+		tlsInsecure:       opts.TLSInsecure,
+		reconnectCh:       make(chan struct{}, 1),
 	}
 }
 
@@ -114,7 +123,20 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) connect(ctx context.Context) error {
-	tlsCfg := transport.ClientTLSConfig()
+	var tlsCfg *tls.Config
+
+	if a.tlsCAFile != "" {
+		var err error
+		tlsCfg, err = transport.ClientTLSConfigWithCA(a.tlsCAFile)
+		if err != nil {
+			return fmt.Errorf("load TLS CA: %w", err)
+		}
+	} else {
+		tlsCfg = transport.ClientTLSConfig()
+		if !a.tlsInsecure {
+			tlsCfg.InsecureSkipVerify = false
+		}
+	}
 
 	conn, err := transport.QUICDial(ctx, a.gatewayAddr, tlsCfg)
 	if err != nil {
@@ -291,12 +313,15 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 		a.metrics.ActiveStreams.Inc()
 	}
 
-	result, _ := relay.Bidirectional(ctx, qstream, tcpConn)
+	result, err := relay.Bidirectional(ctx, qstream, tcpConn)
+	if err != nil {
+		logger.Debug().Err(err).Msg("relay ended with error")
+	}
 
 	if a.metrics != nil {
 		a.metrics.ActiveStreams.Dec()
-		a.metrics.BytesForwarded.WithLabelValues("sent", tunnelID).Add(float64(result.Stats.GetSent()))
-		a.metrics.BytesForwarded.WithLabelValues("received", tunnelID).Add(float64(result.Stats.GetReceived()))
+		a.metrics.BytesForwarded.WithLabelValues("sent").Add(float64(result.Stats.GetSent()))
+		a.metrics.BytesForwarded.WithLabelValues("received").Add(float64(result.Stats.GetReceived()))
 	}
 
 	logger.Info().Int64("sent", result.Stats.GetSent()).Int64("received", result.Stats.GetReceived()).Msg("stream closed")

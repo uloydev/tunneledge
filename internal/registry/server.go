@@ -2,7 +2,6 @@ package registry
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"tunneledge/internal/domain"
@@ -45,24 +44,23 @@ func (s *Server) RegisterTunnel(ctx context.Context, req *pb.RegisterTunnelReque
 		LocalAddr: req.LocalAddr,
 	}
 
-	if err := s.store.Register(sess); err != nil {
+	if err := s.store.Register(ctx, sess); err != nil {
 		logger.Error().Err(err).Msg("failed to register tunnel")
 		return nil, status.Errorf(codes.AlreadyExists, "tunnel %s already registered", req.TunnelId)
 	}
 
-	publicAddr := fmt.Sprintf(":%s", req.TunnelId)
-	logger.Info().Str("public_addr", publicAddr).Msg("tunnel registered")
+	logger.Info().Str("tunnel_id", req.TunnelId).Msg("tunnel registered")
 
 	return &pb.RegisterTunnelResponse{
 		TunnelId:   req.TunnelId,
-		PublicAddr: publicAddr,
+		PublicAddr: req.TunnelId,
 	}, nil
 }
 
 func (s *Server) DeregisterTunnel(ctx context.Context, req *pb.DeregisterTunnelRequest) (*pb.DeregisterTunnelResponse, error) {
 	logger := log.With().Str("tunnel_id", req.TunnelId).Logger()
 
-	if err := s.store.Deregister(req.TunnelId); err != nil {
+	if err := s.store.Deregister(ctx, req.TunnelId); err != nil {
 		logger.Error().Err(err).Msg("failed to deregister tunnel")
 		return nil, status.Errorf(codes.NotFound, "tunnel %s not found", req.TunnelId)
 	}
@@ -72,7 +70,7 @@ func (s *Server) DeregisterTunnel(ctx context.Context, req *pb.DeregisterTunnelR
 }
 
 func (s *Server) GetTunnel(ctx context.Context, req *pb.GetTunnelRequest) (*pb.GetTunnelResponse, error) {
-	sess, err := s.store.Get(req.TunnelId)
+	sess, err := s.store.Get(ctx, req.TunnelId)
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "tunnel %s not found", req.TunnelId)
 	}
@@ -88,7 +86,10 @@ func (s *Server) GetTunnel(ctx context.Context, req *pb.GetTunnelRequest) (*pb.G
 }
 
 func (s *Server) ListTunnels(ctx context.Context, req *pb.ListTunnelsRequest) (*pb.ListTunnelsResponse, error) {
-	sessions := s.store.List()
+	sessions, err := s.store.List(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list tunnels: %v", err)
+	}
 
 	tunnels := make([]*pb.GetTunnelResponse, 0, len(sessions))
 	for _, sess := range sessions {
@@ -106,7 +107,7 @@ func (s *Server) ListTunnels(ctx context.Context, req *pb.ListTunnelsRequest) (*
 }
 
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	if err := s.store.Heartbeat(req.TunnelId); err != nil {
+	if err := s.store.Heartbeat(ctx, req.TunnelId); err != nil {
 		return &pb.HeartbeatResponse{Alive: false}, nil
 	}
 	return &pb.HeartbeatResponse{Alive: true}, nil
@@ -121,7 +122,10 @@ func (s *Server) cleanupLoop(ctx context.Context, interval, ttl time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			expired := s.store.CleanupExpired(ttl)
+			expired, err := s.store.CleanupExpired(ctx, ttl)
+			if err != nil {
+				log.Error().Err(err).Msg("cleanup error")
+			}
 			if expired > 0 {
 				log.Info().Int("expired", expired).Msg("cleaned up expired sessions")
 			}

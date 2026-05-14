@@ -18,5 +18,13 @@ go.work
 *.swo
 *~
 
+.kilo/
+
 .DS_Store
 Thumbs.db
+
+./agent
+./dashboard
+./gateway
+./http-echo
+./registry

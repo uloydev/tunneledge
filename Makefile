@@ -1,7 +1,7 @@
-.PHONY: help build build-agent build-gateway build-registry build-http-echo run run-registry run-gateway run-agent \
-       run-local test test-unit test-verbose vet lint tidy fmt proto \
-       docker-up docker-down docker-build docker-logs \
-       seed-db certs clean clean-bin all
+.PHONY: help build build-agent build-gateway build-registry build-dashboard build-http-echo run run-registry run-gateway run-agent 
+	run-agent-tui run-agent-headless run-dashboard run-local test test-unit test-verbose vet lint tidy fmt proto \
+	docker-up docker-down docker-build docker-logs \
+	seed-db certs clean clean-bin all
 
 BINARY_DIR  := bin
 GO          := go
@@ -16,7 +16,7 @@ help: ## Show this help
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
-build: build-agent build-gateway build-registry build-http-echo ## Build all binaries
+build: build-agent build-gateway build-registry build-dashboard build-http-echo ## Build all binaries
 
 build-agent: ## Build agent binary
 	@mkdir -p $(BINARY_DIR)
@@ -34,6 +34,10 @@ build-http-echo: ## Build http-echo binary
 	@mkdir -p $(BINARY_DIR)
 	$(GO) build $(MAIN_FLAGS) -o $(BINARY_DIR)/http-echo ./cmd/http-echo
 
+build-dashboard: ## Build dashboard binary
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build $(MAIN_FLAGS) -o $(BINARY_DIR)/dashboard ./cmd/dashboard
+
 # ── Run (local dev) ──────────────────────────────────────────────────────────
 
 run-registry: ## Run registry service
@@ -42,8 +46,17 @@ run-registry: ## Run registry service
 run-gateway: ## Run gateway service
 	$(GO) run ./cmd/gateway -c $(CONFIG_DIR)/gateway.yaml
 
-run-agent: ## Run agent (set TOKEN and LOCAL_ADDR)
-	$(GO) run ./cmd/agent -c $(CONFIG_DIR)/agent.yaml --token $${TOKEN:-dev-token} --local-addr $${LOCAL_ADDR:-localhost:3000}
+run-agent: ## Run agent with TUI (default mode)
+	$(GO) run ./cmd/agent -c $(CONFIG_DIR)/agent.yaml
+
+run-dashboard: ## Run dashboard API server
+	$(GO) run ./cmd/dashboard -c $(CONFIG_DIR)/dashboard.yaml
+
+run-agent-tui: ## Run agent with TUI
+	$(GO) run ./cmd/agent -c $(CONFIG_DIR)/agent.yaml
+
+run-agent-headless: ## Run agent headless (for deployment/CI)
+	$(GO) run ./cmd/agent headless -c $(CONFIG_DIR)/agent.yaml --token $${TOKEN:-dev-token} --local-addr $${LOCAL_ADDR:-localhost:3000}
 
 run-local: ## Run all services locally (requires 3 terminals — prints instructions)
 	@echo ""
@@ -51,7 +64,8 @@ run-local: ## Run all services locally (requires 3 terminals — prints instruct
 	@echo ""
 	@echo "  \033[36mTerminal 1 — Registry:\033[0m   make run-registry"
 	@echo "  \033[36mTerminal 2 — Gateway:\033[0m    make run-gateway"
-	@echo "  \033[36mTerminal 3 — Agent:\033[0m      make run-agent"
+	@echo "  \033[36mTerminal 3 — Agent (TUI):\033[0m  make run-agent"
+	@echo "  \033[36mTerminal 3 — Agent (headless):\033[0m make run-agent-headless"
 	@echo ""
 	@echo "Then test with:"
 	@echo "  echo 'Hello' | openssl s_client -connect web-agent-1.tunneledge.dev:443 -servername web-agent-1.tunneledge.dev -quiet"

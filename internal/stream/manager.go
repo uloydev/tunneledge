@@ -6,8 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"tunneledge/pkg/errs"
+
+	"github.com/google/uuid"
 )
 
 type State int
@@ -156,6 +157,18 @@ func (m *Manager) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.streams)
+}
+
+func (m *Manager) CountByTunnel(tunnelID string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	count := 0
+	for _, s := range m.streams {
+		if s.TunnelID == tunnelID {
+			count++
+		}
+	}
+	return count
 }
 
 func generateStreamID() string {

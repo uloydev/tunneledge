@@ -9,6 +9,8 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// Store is the legacy store helper for backward compatibility with
+// cmd/gateway and cmd/registry token loading.
 type Store struct {
 	db *gorm.DB
 }
@@ -53,6 +55,7 @@ func (s *Store) Close() error {
 	return sqlDB.Close()
 }
 
+// LoadTokens returns token_hash → agentID map for use with HashedTokenAuthenticator.
 func (s *Store) LoadTokens() (map[string]string, error) {
 	var tokens []Token
 	if err := s.db.Find(&tokens).Error; err != nil {
@@ -87,42 +90,4 @@ func (s *Store) AddToken(token, agentID string) error {
 
 func (s *Store) RemoveToken(token string) error {
 	return s.db.Where("token = ?", token).Delete(&Token{}).Error
-}
-
-func (s *Store) CreateSession(session *TunnelSession) error {
-	return s.db.Create(session).Error
-}
-
-func (s *Store) CloseSession(tunnelID string) error {
-	now := time.Now()
-	return s.db.Model(&TunnelSession{}).
-		Where("tunnel_id = ? AND status = ?", tunnelID, "active").
-		Updates(map[string]interface{}{
-			"status":          "closed",
-			"disconnected_at": &now,
-		}).Error
-}
-
-func (s *Store) UpdateHeartbeat(tunnelID string) error {
-	return s.db.Model(&TunnelSession{}).
-		Where("tunnel_id = ? AND status = ?", tunnelID, "active").
-		Update("last_heartbeat", time.Now()).Error
-}
-
-func (s *Store) CleanupExpired(ttl time.Duration) (int, error) {
-	cutoff := time.Now().Add(-ttl)
-	now := time.Now()
-	result := s.db.Model(&TunnelSession{}).
-		Where("status = ? AND last_heartbeat < ?", "active", cutoff).
-		Updates(map[string]interface{}{
-			"status":          "expired",
-			"disconnected_at": &now,
-		})
-	return int(result.RowsAffected), result.Error
-}
-
-func (s *Store) ListActive() ([]*TunnelSession, error) {
-	var sessions []*TunnelSession
-	err := s.db.Where("status = ?", "active").Find(&sessions).Error
-	return sessions, err
 }

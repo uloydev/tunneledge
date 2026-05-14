@@ -130,6 +130,11 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 	hostEntries := make([]transport.TunnelHostEntry, 0, len(authMsg.Tunnels))
 
 	for _, t := range authMsg.Tunnels {
+		if err := domain.ValidateLabel(t.Label); err != nil {
+			logger.Warn().Str("label", t.Label).Err(err).Msg("invalid tunnel label")
+			_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
+			return "", "", fmt.Errorf("invalid label %q: %w", t.Label, err)
+		}
 		routes = append(routes, domain.TunnelRoute{Label: t.Label, LocalAddr: t.LocalAddr})
 	}
 
@@ -180,7 +185,26 @@ func (g *Gateway) agentStreamLoop(ctx context.Context, conn *quic.Conn, tunnelID
 			g.removeTunnel(tunnelID, "stream_error")
 			return
 		}
-		s.Close()
+
+		// Read message type to identify heartbeats vs other streams
+		msgType, err := transport.ReadMessageType(s)
+		if err != nil {
+			s.Close()
+			continue
+		}
+
+		switch msgType {
+		case transport.MsgHeartbeat:
+			log.Debug().Str("tunnel_id", tunnelID).Msg("heartbeat received from agent")
+			if err := g.registryClient.Heartbeat(tunnelID); err != nil {
+				log.Warn().Err(err).Str("tunnel_id", tunnelID).Msg("heartbeat registry update failed")
+			}
+			s.Close()
+		default:
+			// Unknown message type on agent-initiated stream
+			log.Debug().Str("tunnel_id", tunnelID).Uint8("msg_type", msgType).Msg("unknown message from agent")
+			s.Close()
+		}
 	}
 }
 

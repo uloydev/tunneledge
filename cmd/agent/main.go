@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"tunneledge/internal/agent"
+	"tunneledge/internal/tui"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +29,7 @@ var (
 	flagLogLevel    string
 	flagLogFormat   string
 	flagMetricsAddr string
+	flagHeadless    bool
 )
 
 func main() {
@@ -34,19 +37,37 @@ func main() {
 		Use:   "tunneledge-agent",
 		Short: "TunnelEdge Agent — Expose local TCP services via QUIC tunnel",
 		Long:  "TunnelEdge Agent connects to a TunnelEdge Gateway via QUIC and relays traffic to local TCP services.",
-		RunE:  runAgent,
+		RunE:  runRoot,
+	}
+
+	headlessCmd := &cobra.Command{
+		Use:   "headless",
+		Short: "Run agent in headless mode (for deployment/CI)",
+		RunE:  runHeadless,
 	}
 
 	rootCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "config file path")
 	rootCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
-	rootCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token (required)")
+	rootCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token")
 	rootCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
 	rootCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
 	rootCmd.Flags().StringVar(&flagLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	rootCmd.Flags().StringVar(&flagLogFormat, "log-format", "", "log format: json, console")
 	rootCmd.Flags().StringVar(&flagMetricsAddr, "metrics-addr", "", "metrics server address")
+	rootCmd.Flags().BoolVar(&flagHeadless, "headless", false, "run in headless mode (no TUI)")
 
-	_ = rootCmd.MarkFlagRequired("token")
+	headlessCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "config file path")
+	headlessCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
+	headlessCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token (required)")
+	headlessCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
+	headlessCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
+	headlessCmd.Flags().StringVar(&flagLogLevel, "log-level", "", "log level: debug, info, warn, error")
+	headlessCmd.Flags().StringVar(&flagLogFormat, "log-format", "", "log format: json, console")
+	headlessCmd.Flags().StringVar(&flagMetricsAddr, "metrics-addr", "", "metrics server address")
+
+	_ = headlessCmd.MarkFlagRequired("token")
+
+	rootCmd.AddCommand(headlessCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -66,7 +87,7 @@ func parseTunnelFlag(s string) (label, localAddr string, err error) {
 	return label, localAddr, nil
 }
 
-func runAgent(cmd *cobra.Command, args []string) error {
+func loadConfig() (*config.Config, error) {
 	opts := []config.Option{}
 	if flagConfig != "" {
 		opts = append(opts, config.WithConfigPath(flagConfig))
@@ -74,7 +95,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 
 	cfg, err := config.Load(config.ServiceAgent, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	if flagGatewayAddr != "" {
@@ -96,6 +117,49 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		cfg.Observability.MetricsAddr = flagMetricsAddr
 	}
 
+	return cfg, nil
+}
+
+func runRoot(cmd *cobra.Command, args []string) error {
+	if flagHeadless {
+		return runHeadless(cmd, args)
+	}
+
+	return runTUI()
+}
+
+func runTUI() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	logr := logger.New(logger.Config{
+		Level:  cfg.Log.Level,
+		Format: "console",
+	})
+	log.Logger = logr.Logger
+
+	app := tui.NewApp(cfg, flagConfig)
+
+	logWriter := app.Bridge().LogWriter()
+	log.Logger = logr.Output(logWriter)
+
+	p := tea.NewProgram(app, tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	return nil
+}
+
+func runHeadless(cmd *cobra.Command, args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
 	tunnels, err := resolveTunnels(cfg, flagTunnels, flagLocalAddr)
 	if err != nil {
 		return err
@@ -111,7 +175,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		Str("service", cfg.ServiceName).
 		Str("gateway_addr", cfg.Agent.GatewayAddr).
 		Int("tunnel_count", len(tunnels)).
-		Msg("starting agent")
+		Msg("starting agent (headless)")
 
 	for _, t := range tunnels {
 		log.Info().
