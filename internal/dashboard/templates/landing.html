@@ -208,6 +208,10 @@
         Open-source · Self-hostable · QUIC-powered
       </div>
 
+      <p class="max-w-xl mx-auto text-sm text-slate-500 mb-6 animate-fade-up" style="animation-delay:.12s">
+        Phase 2 ships full multi-active high availability: registry-backed relay leases, distributed watch-driven cross-gateway routing, agent failover, a public TCP edge, and an optional etcd coordination backend for HA registry deployments.
+      </p>
+
       <!-- Headline -->
       <h1 class="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] mb-6 animate-fade-up" style="animation-delay:.15s">
         Expose local services<br>
@@ -331,7 +335,7 @@
             <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">Self-Hosted First</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus metrics, a provisioned Grafana dashboard, shutdown limits, registry cleanup windows, and optional OTLP tracing are all exposed as first-class runtime settings.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus metrics, a provisioned Grafana dashboard, shutdown limits, registry cleanup windows, and optional OTLP tracing are all exposed as first-class runtime settings. Phase 2 multi-active HA is fully shipped — enable the etcd coordinator with a single env var for a production-grade HA registry.</p>
         </div>
 
         <!-- Feature 6 -->
@@ -366,7 +370,7 @@
             <div class="shrink-0 w-10 h-10 rounded-full bg-brand-500/10 border border-brand-500/30 text-brand-400 font-bold font-mono flex items-center justify-center text-sm">1</div>
             <div>
               <h3 class="font-bold text-white text-base mb-2">Deploy the gateway</h3>
-              <p class="text-sm text-slate-400 mb-4">Spin up registry + gateway + dashboard with a single Docker Compose command, with Prometheus scraping, Grafana dashboards, and optional tracing knobs already wired into the stack.</p>
+              <p class="text-sm text-slate-400 mb-4">Spin up a two-gateway cluster with a single Docker Compose command — registry, two gateways, nginx TCP edge, Prometheus, and Grafana all pre-wired. Either gateway serves any tunnel via the distributed router. Point <code>TE_REGISTRY_ETCD_ENDPOINTS</code> at an etcd cluster to make the registry itself HA.</p>
               <div class="glass rounded-xl overflow-hidden">
                 <div class="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[.02]">
                   <span class="text-xs text-slate-500 font-mono">shell</span>

@@ -17,6 +17,7 @@ type TunnelConfig struct {
 
 type AgentConfig struct {
 	GatewayAddr       string         `mapstructure:"gateway_addr"`
+	GatewayAddrs      []string       `mapstructure:"gateway_addrs"`
 	Token             string         `mapstructure:"token"`
 	LocalAddr         string         `mapstructure:"local_addr"`
 	Tunnels           []TunnelConfig `mapstructure:"tunnels"`
@@ -35,15 +36,19 @@ type GatewayConfig struct {
 	PublicListenAddr string `mapstructure:"public_listen_addr"`
 	BaseDomain       string `mapstructure:"base_domain"`
 	RegistryAddr     string `mapstructure:"registry_addr"`
+	RelayID          string `mapstructure:"relay_id"`
+	AdvertiseAddr    string `mapstructure:"advertise_addr"`
 	TLSCertFile      string `mapstructure:"tls_cert_file"`
 	TLSKeyFile       string `mapstructure:"tls_key_file"`
 	// RegistryTLSCert is the PEM path for verifying the registry gRPC TLS cert.
 	// Leave empty to use system CAs. Set to "insecure" to skip verification (dev only).
-	RegistryTLSCert   string        `mapstructure:"registry_tls_cert"`
-	ShutdownTimeout   time.Duration `mapstructure:"shutdown_timeout"`
-	MaxStreams        int64         `mapstructure:"max_streams"`
-	GRPCAuthToken     string        `mapstructure:"grpc_auth_token"`
-	StreamIdleTimeout time.Duration `mapstructure:"stream_idle_timeout"`
+	RegistryTLSCert      string        `mapstructure:"registry_tls_cert"`
+	LeaseTTL             time.Duration `mapstructure:"lease_ttl"`
+	HealthReportInterval time.Duration `mapstructure:"health_report_interval"`
+	ShutdownTimeout      time.Duration `mapstructure:"shutdown_timeout"`
+	MaxStreams           int64         `mapstructure:"max_streams"`
+	GRPCAuthToken        string        `mapstructure:"grpc_auth_token"`
+	StreamIdleTimeout    time.Duration `mapstructure:"stream_idle_timeout"`
 }
 
 type RegistryConfig struct {
@@ -53,6 +58,10 @@ type RegistryConfig struct {
 	SessionTTL      time.Duration `mapstructure:"session_ttl"`
 	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
 	GRPCAuthToken   string        `mapstructure:"grpc_auth_token"`
+	// EtcdEndpoints enables the etcd Coordinator backend for HA deployments.
+	// When empty (default), the in-memory coordinator is used.
+	EtcdEndpoints   []string      `mapstructure:"etcd_endpoints"`
+	EtcdDialTimeout time.Duration `mapstructure:"etcd_dial_timeout"`
 }
 
 type DashboardConfig struct {
@@ -130,6 +139,7 @@ func defaults(svc ServiceType) {
 	switch svc {
 	case ServiceAgent:
 		viper.SetDefault("agent.gateway_addr", "localhost:4433")
+		viper.SetDefault("agent.gateway_addrs", []string{"localhost:4433"})
 		viper.SetDefault("agent.reconnect_delay", 2*time.Second)
 		viper.SetDefault("agent.max_reconnect", 0)
 		viper.SetDefault("agent.heartbeat_interval", 15*time.Second)
@@ -141,7 +151,11 @@ func defaults(svc ServiceType) {
 		viper.SetDefault("gateway.public_listen_addr", ":443")
 		viper.SetDefault("gateway.base_domain", "tunneledge.dev")
 		viper.SetDefault("gateway.registry_addr", "localhost:50051")
+		viper.SetDefault("gateway.relay_id", "gateway-1")
+		viper.SetDefault("gateway.advertise_addr", "")
 		viper.SetDefault("gateway.registry_tls_cert", "insecure")
+		viper.SetDefault("gateway.lease_ttl", 45*time.Second)
+		viper.SetDefault("gateway.health_report_interval", 15*time.Second)
 		viper.SetDefault("gateway.shutdown_timeout", 15*time.Second)
 		viper.SetDefault("gateway.max_streams", int64(1000))
 		viper.SetDefault("gateway.grpc_auth_token", "")
@@ -220,8 +234,8 @@ func (c *Config) Validate(svc ServiceType) error {
 
 	switch svc {
 	case ServiceAgent:
-		if c.Agent.GatewayAddr == "" {
-			return fmt.Errorf("agent.gateway_addr is required")
+		if len(c.Agent.GatewayTargets()) == 0 {
+			return fmt.Errorf("agent.gateway_addr or agent.gateway_addrs is required")
 		}
 		if c.Agent.Token == "" {
 			return fmt.Errorf("agent.token is required")
@@ -250,6 +264,15 @@ func (c *Config) Validate(svc ServiceType) error {
 		}
 		if c.Gateway.RegistryAddr == "" {
 			return fmt.Errorf("gateway.registry_addr is required")
+		}
+		if c.Gateway.RelayID == "" {
+			return fmt.Errorf("gateway.relay_id is required")
+		}
+		if c.Gateway.LeaseTTL <= 0 {
+			return fmt.Errorf("gateway.lease_ttl must be greater than zero")
+		}
+		if c.Gateway.HealthReportInterval <= 0 {
+			return fmt.Errorf("gateway.health_report_interval must be greater than zero")
 		}
 		if c.Gateway.ShutdownTimeout <= 0 {
 			return fmt.Errorf("gateway.shutdown_timeout must be greater than zero")
@@ -304,6 +327,7 @@ type SaveConfig struct {
 	} `yaml:"observability"`
 	Agent struct {
 		GatewayAddr       string         `yaml:"gateway_addr"`
+		GatewayAddrs      []string       `yaml:"gateway_addrs,omitempty"`
 		Token             string         `yaml:"token"`
 		LocalAddr         string         `yaml:"local_addr,omitempty"`
 		Tunnels           []TunnelConfig `yaml:"tunnels,omitempty"`
@@ -320,7 +344,11 @@ func Save(cfg *Config, path string) error {
 	sc.Log.Format = cfg.Log.Format
 	sc.Observability.MetricsEnabled = cfg.Observability.MetricsEnabled
 	sc.Observability.MetricsAddr = cfg.Observability.MetricsAddr
-	sc.Agent.GatewayAddr = cfg.Agent.GatewayAddr
+	targets := cfg.Agent.GatewayTargets()
+	if len(targets) > 0 {
+		sc.Agent.GatewayAddr = targets[0]
+	}
+	sc.Agent.GatewayAddrs = targets
 	sc.Agent.Token = cfg.Agent.Token
 	sc.Agent.LocalAddr = cfg.Agent.LocalAddr
 	sc.Agent.Tunnels = cfg.Agent.Tunnels
@@ -339,4 +367,25 @@ func Save(cfg *Config, path string) error {
 	}
 
 	return nil
+}
+
+func (c AgentConfig) GatewayTargets() []string {
+	seen := make(map[string]struct{})
+	targets := make([]string, 0, 1+len(c.GatewayAddrs))
+	appendTarget := func(addr string) {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			return
+		}
+		if _, exists := seen[addr]; exists {
+			return
+		}
+		seen[addr] = struct{}{}
+		targets = append(targets, addr)
+	}
+	appendTarget(c.GatewayAddr)
+	for _, addr := range c.GatewayAddrs {
+		appendTarget(addr)
+	}
+	return targets
 }

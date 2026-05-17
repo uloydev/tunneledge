@@ -21,6 +21,29 @@ type SessionRepository interface {
 	CleanupExpired(ctx context.Context, ttl time.Duration) (int, error)
 }
 
+type RelayRepository interface {
+	Upsert(ctx context.Context, relay *RelayInfo) error
+	Get(ctx context.Context, relayID string) (*RelayInfo, error)
+	List(ctx context.Context) ([]*RelayInfo, error)
+	Delete(ctx context.Context, relayID string) error
+}
+
+type LeaseRepository interface {
+	Upsert(ctx context.Context, lease *Lease) error
+	Get(ctx context.Context, leaseID string) (*Lease, error)
+	GetByTunnelID(ctx context.Context, tunnelID string) (*Lease, error)
+	ListByRelay(ctx context.Context, relayID string) ([]*Lease, error)
+	Delete(ctx context.Context, leaseID string) error
+	DeleteExpired(ctx context.Context, cutoff time.Time) (int, error)
+}
+
+type RelayHealthRepository interface {
+	Upsert(ctx context.Context, relayID string, health *RelayHealth) error
+	Get(ctx context.Context, relayID string) (*RelayHealth, error)
+	List(ctx context.Context) (map[string]*RelayHealth, error)
+	Delete(ctx context.Context, relayID string) error
+}
+
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id uint) (*User, error)

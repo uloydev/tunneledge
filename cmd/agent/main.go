@@ -23,15 +23,16 @@ import (
 )
 
 var (
-	flagConfig      string
-	flagGatewayAddr string
-	flagToken       string
-	flagLocalAddr   string
-	flagTunnels     []string
-	flagLogLevel    string
-	flagLogFormat   string
-	flagMetricsAddr string
-	flagHeadless    bool
+	flagConfig       string
+	flagGatewayAddr  string
+	flagGatewayAddrs []string
+	flagToken        string
+	flagLocalAddr    string
+	flagTunnels      []string
+	flagLogLevel     string
+	flagLogFormat    string
+	flagMetricsAddr  string
+	flagHeadless     bool
 )
 
 func main() {
@@ -50,6 +51,7 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "config file path")
 	rootCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
+	rootCmd.Flags().StringArrayVar(&flagGatewayAddrs, "gateway-addrs", nil, "gateway QUIC addresses for failover (repeatable)")
 	rootCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token")
 	rootCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
 	rootCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
@@ -60,6 +62,7 @@ func main() {
 
 	headlessCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "config file path")
 	headlessCmd.Flags().StringVar(&flagGatewayAddr, "gateway-addr", "", "gateway QUIC address (default: localhost:4433)")
+	headlessCmd.Flags().StringArrayVar(&flagGatewayAddrs, "gateway-addrs", nil, "gateway QUIC addresses for failover (repeatable)")
 	headlessCmd.Flags().StringVarP(&flagToken, "token", "t", "", "authentication token (required)")
 	headlessCmd.Flags().StringVar(&flagLocalAddr, "local-addr", "", "local TCP service address (e.g. localhost:3000)")
 	headlessCmd.Flags().StringArrayVar(&flagTunnels, "tunnel", nil, "tunnel definition: label=local_addr (repeatable)")
@@ -102,6 +105,13 @@ func loadConfig() (*config.Config, error) {
 
 	if flagGatewayAddr != "" {
 		cfg.Agent.GatewayAddr = flagGatewayAddr
+		cfg.Agent.GatewayAddrs = []string{flagGatewayAddr}
+	}
+	if len(flagGatewayAddrs) > 0 {
+		cfg.Agent.GatewayAddrs = append([]string(nil), flagGatewayAddrs...)
+		if cfg.Agent.GatewayAddr == "" {
+			cfg.Agent.GatewayAddr = flagGatewayAddrs[0]
+		}
 	}
 	if flagToken != "" {
 		cfg.Agent.Token = flagToken
@@ -186,6 +196,7 @@ func runTUI() error {
 	g.Go(func() error {
 		a := agent.NewAgent(agent.Options{
 			GatewayAddr:       cfg.Agent.GatewayAddr,
+			GatewayAddrs:      cfg.Agent.GatewayTargets(),
 			Token:             cfg.Agent.Token,
 			Tunnels:           tunnels,
 			ReconnectDelay:    cfg.Agent.ReconnectDelay,
@@ -260,7 +271,7 @@ func runHeadless(cmd *cobra.Command, args []string) error {
 
 	log.Info().
 		Str("service", cfg.ServiceName).
-		Str("gateway_addr", cfg.Agent.GatewayAddr).
+		Strs("gateway_addrs", cfg.Agent.GatewayTargets()).
 		Int("tunnel_count", len(tunnels)).
 		Msg("starting agent (headless)")
 
@@ -281,6 +292,7 @@ func runHeadless(cmd *cobra.Command, args []string) error {
 
 	a := agent.NewAgent(agent.Options{
 		GatewayAddr:       cfg.Agent.GatewayAddr,
+		GatewayAddrs:      cfg.Agent.GatewayTargets(),
 		Token:             cfg.Agent.Token,
 		Tunnels:           tunnels,
 		ReconnectDelay:    cfg.Agent.ReconnectDelay,

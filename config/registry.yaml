@@ -12,6 +12,9 @@ registry:
   cleanup_interval: 30s
   # tls_cert_file: /path/to/registry.crt
   # tls_key_file: /path/to/registry.key
+  # etcd_endpoints:          # Uncomment to enable HA etcd coordinator
+  #   - http://localhost:2379
+  # etcd_dial_timeout: 5s
 
 db:
   driver: postgres

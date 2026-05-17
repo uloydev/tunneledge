@@ -57,7 +57,12 @@ func main() {
 
 	sessStore := resolveSessionStore(cfg)
 
-	srv := registry.NewServer(sessStore, cfg.Registry.CleanupInterval, cfg.Registry.SessionTTL)
+	coord := resolveCoordinator(cfg)
+	if c, ok := coord.(interface{ Close() error }); ok {
+		defer func() { _ = c.Close() }()
+	}
+
+	srv := registry.NewServer(sessStore, coord, cfg.Registry.CleanupInterval, cfg.Registry.SessionTTL)
 	defer srv.Stop()
 
 	var metricsSrv *metrics.Server
@@ -110,6 +115,23 @@ func main() {
 	}
 
 	log.Info().Msg("registry stopped")
+}
+
+func resolveCoordinator(cfg *config.Config) registry.Coordinator {
+	if len(cfg.Registry.EtcdEndpoints) > 0 {
+		dialTimeout := cfg.Registry.EtcdDialTimeout
+		if dialTimeout <= 0 {
+			dialTimeout = 5 * time.Second
+		}
+		c, err := registry.NewEtcdCoordinator(cfg.Registry.EtcdEndpoints, dialTimeout)
+		if err != nil {
+			log.Fatal().Err(err).Strs("endpoints", cfg.Registry.EtcdEndpoints).Msg("failed to connect to etcd")
+		}
+		log.Info().Strs("endpoints", cfg.Registry.EtcdEndpoints).Msg("using etcd coordinator")
+		return c
+	}
+	log.Info().Msg("using in-memory coordinator (single-node)")
+	return registry.NewMemCoordinator()
 }
 
 func resolveSessionStore(cfg *config.Config) domain.SessionRepository {

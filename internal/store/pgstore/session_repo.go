@@ -26,6 +26,8 @@ func (r *PGSessionRepository) Register(ctx context.Context, sess *domain.Session
 	m := &TunnelSessionModel{
 		TunnelID:      sess.TunnelID,
 		AgentID:       sess.AgentID,
+		OwnerRelayID:  sess.OwnerRelayID,
+		LeaseID:       sess.LeaseID,
 		PublicHost:    sess.PublicAddr,
 		LocalAddr:     sess.LocalAddr,
 		RemoteAddr:    sess.RemoteAddr,
@@ -67,6 +69,8 @@ func (r *PGSessionRepository) Get(ctx context.Context, tunnelID string) (*domain
 	return &domain.Session{
 		TunnelID:      m.TunnelID,
 		AgentID:       m.AgentID,
+		OwnerRelayID:  m.OwnerRelayID,
+		LeaseID:       m.LeaseID,
 		PublicAddr:    m.PublicHost,
 		LocalAddr:     m.LocalAddr,
 		RemoteAddr:    m.RemoteAddr,
@@ -86,6 +90,8 @@ func (r *PGSessionRepository) List(ctx context.Context) ([]*domain.Session, erro
 		result = append(result, &domain.Session{
 			TunnelID:      models[i].TunnelID,
 			AgentID:       models[i].AgentID,
+			OwnerRelayID:  models[i].OwnerRelayID,
+			LeaseID:       models[i].LeaseID,
 			PublicAddr:    models[i].PublicHost,
 			LocalAddr:     models[i].LocalAddr,
 			RemoteAddr:    models[i].RemoteAddr,

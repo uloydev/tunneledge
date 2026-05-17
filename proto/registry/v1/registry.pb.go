@@ -21,6 +21,67 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type WatchEventType int32
+
+const (
+	WatchEventType_WATCH_EVENT_TYPE_UNSPECIFIED          WatchEventType = 0
+	WatchEventType_WATCH_EVENT_TYPE_TUNNEL_UPSERTED      WatchEventType = 1
+	WatchEventType_WATCH_EVENT_TYPE_TUNNEL_DELETED       WatchEventType = 2
+	WatchEventType_WATCH_EVENT_TYPE_LEASE_ACQUIRED       WatchEventType = 3
+	WatchEventType_WATCH_EVENT_TYPE_LEASE_RELEASED       WatchEventType = 4
+	WatchEventType_WATCH_EVENT_TYPE_RELAY_UPSERTED       WatchEventType = 5
+	WatchEventType_WATCH_EVENT_TYPE_RELAY_HEALTH_UPDATED WatchEventType = 6
+)
+
+// Enum value maps for WatchEventType.
+var (
+	WatchEventType_name = map[int32]string{
+		0: "WATCH_EVENT_TYPE_UNSPECIFIED",
+		1: "WATCH_EVENT_TYPE_TUNNEL_UPSERTED",
+		2: "WATCH_EVENT_TYPE_TUNNEL_DELETED",
+		3: "WATCH_EVENT_TYPE_LEASE_ACQUIRED",
+		4: "WATCH_EVENT_TYPE_LEASE_RELEASED",
+		5: "WATCH_EVENT_TYPE_RELAY_UPSERTED",
+		6: "WATCH_EVENT_TYPE_RELAY_HEALTH_UPDATED",
+	}
+	WatchEventType_value = map[string]int32{
+		"WATCH_EVENT_TYPE_UNSPECIFIED":          0,
+		"WATCH_EVENT_TYPE_TUNNEL_UPSERTED":      1,
+		"WATCH_EVENT_TYPE_TUNNEL_DELETED":       2,
+		"WATCH_EVENT_TYPE_LEASE_ACQUIRED":       3,
+		"WATCH_EVENT_TYPE_LEASE_RELEASED":       4,
+		"WATCH_EVENT_TYPE_RELAY_UPSERTED":       5,
+		"WATCH_EVENT_TYPE_RELAY_HEALTH_UPDATED": 6,
+	}
+)
+
+func (x WatchEventType) Enum() *WatchEventType {
+	p := new(WatchEventType)
+	*p = x
+	return p
+}
+
+func (x WatchEventType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (WatchEventType) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_registry_v1_registry_proto_enumTypes[0].Descriptor()
+}
+
+func (WatchEventType) Type() protoreflect.EnumType {
+	return &file_proto_registry_v1_registry_proto_enumTypes[0]
+}
+
+func (x WatchEventType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use WatchEventType.Descriptor instead.
+func (WatchEventType) EnumDescriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{0}
+}
+
 type RegisterTunnelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TunnelId      string                 `protobuf:"bytes,1,opt,name=tunnel_id,json=tunnelId,proto3" json:"tunnel_id,omitempty"`
@@ -281,6 +342,8 @@ type GetTunnelResponse struct {
 	LocalAddr     string                 `protobuf:"bytes,4,opt,name=local_addr,json=localAddr,proto3" json:"local_addr,omitempty"`
 	CreatedAt     int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	LastHeartbeat int64                  `protobuf:"varint,6,opt,name=last_heartbeat,json=lastHeartbeat,proto3" json:"last_heartbeat,omitempty"`
+	OwnerRelayId  string                 `protobuf:"bytes,7,opt,name=owner_relay_id,json=ownerRelayId,proto3" json:"owner_relay_id,omitempty"`
+	LeaseId       string                 `protobuf:"bytes,8,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -355,6 +418,20 @@ func (x *GetTunnelResponse) GetLastHeartbeat() int64 {
 		return x.LastHeartbeat
 	}
 	return 0
+}
+
+func (x *GetTunnelResponse) GetOwnerRelayId() string {
+	if x != nil {
+		return x.OwnerRelayId
+	}
+	return ""
+}
+
+func (x *GetTunnelResponse) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
 }
 
 type ListTunnelsRequest struct {
@@ -525,6 +602,890 @@ func (x *HeartbeatResponse) GetAlive() bool {
 	return false
 }
 
+type WatchRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TunnelId        string                 `protobuf:"bytes,1,opt,name=tunnel_id,json=tunnelId,proto3" json:"tunnel_id,omitempty"`
+	RelayId         string                 `protobuf:"bytes,2,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	IncludeExisting bool                   `protobuf:"varint,3,opt,name=include_existing,json=includeExisting,proto3" json:"include_existing,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *WatchRequest) Reset() {
+	*x = WatchRequest{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchRequest) ProtoMessage() {}
+
+func (x *WatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
+func (*WatchRequest) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *WatchRequest) GetTunnelId() string {
+	if x != nil {
+		return x.TunnelId
+	}
+	return ""
+}
+
+func (x *WatchRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *WatchRequest) GetIncludeExisting() bool {
+	if x != nil {
+		return x.IncludeExisting
+	}
+	return false
+}
+
+type RelayInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RelayId       string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	AdvertiseAddr string                 `protobuf:"bytes,2,opt,name=advertise_addr,json=advertiseAddr,proto3" json:"advertise_addr,omitempty"`
+	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	ActiveTunnels int32                  `protobuf:"varint,4,opt,name=active_tunnels,json=activeTunnels,proto3" json:"active_tunnels,omitempty"`
+	ActiveStreams int32                  `protobuf:"varint,5,opt,name=active_streams,json=activeStreams,proto3" json:"active_streams,omitempty"`
+	LastSeenUnix  int64                  `protobuf:"varint,6,opt,name=last_seen_unix,json=lastSeenUnix,proto3" json:"last_seen_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RelayInfo) Reset() {
+	*x = RelayInfo{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayInfo) ProtoMessage() {}
+
+func (x *RelayInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayInfo.ProtoReflect.Descriptor instead.
+func (*RelayInfo) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RelayInfo) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *RelayInfo) GetAdvertiseAddr() string {
+	if x != nil {
+		return x.AdvertiseAddr
+	}
+	return ""
+}
+
+func (x *RelayInfo) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *RelayInfo) GetActiveTunnels() int32 {
+	if x != nil {
+		return x.ActiveTunnels
+	}
+	return 0
+}
+
+func (x *RelayInfo) GetActiveStreams() int32 {
+	if x != nil {
+		return x.ActiveStreams
+	}
+	return 0
+}
+
+func (x *RelayInfo) GetLastSeenUnix() int64 {
+	if x != nil {
+		return x.LastSeenUnix
+	}
+	return 0
+}
+
+type LeaseInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	TunnelId      string                 `protobuf:"bytes,2,opt,name=tunnel_id,json=tunnelId,proto3" json:"tunnel_id,omitempty"`
+	RelayId       string                 `protobuf:"bytes,3,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	ExpiresAtUnix int64                  `protobuf:"varint,4,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
+	Version       int64                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaseInfo) Reset() {
+	*x = LeaseInfo{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaseInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaseInfo) ProtoMessage() {}
+
+func (x *LeaseInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaseInfo.ProtoReflect.Descriptor instead.
+func (*LeaseInfo) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *LeaseInfo) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *LeaseInfo) GetTunnelId() string {
+	if x != nil {
+		return x.TunnelId
+	}
+	return ""
+}
+
+func (x *LeaseInfo) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *LeaseInfo) GetExpiresAtUnix() int64 {
+	if x != nil {
+		return x.ExpiresAtUnix
+	}
+	return 0
+}
+
+func (x *LeaseInfo) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type RelayHealth struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	RttMillis              int64                  `protobuf:"varint,1,opt,name=rtt_millis,json=rttMillis,proto3" json:"rtt_millis,omitempty"`
+	HeartbeatLatencyMillis int64                  `protobuf:"varint,2,opt,name=heartbeat_latency_millis,json=heartbeatLatencyMillis,proto3" json:"heartbeat_latency_millis,omitempty"`
+	ActiveTunnels          int32                  `protobuf:"varint,3,opt,name=active_tunnels,json=activeTunnels,proto3" json:"active_tunnels,omitempty"`
+	ActiveStreams          int32                  `protobuf:"varint,4,opt,name=active_streams,json=activeStreams,proto3" json:"active_streams,omitempty"`
+	BytesPerSecond         int64                  `protobuf:"varint,5,opt,name=bytes_per_second,json=bytesPerSecond,proto3" json:"bytes_per_second,omitempty"`
+	PacketLossPct          float64                `protobuf:"fixed64,6,opt,name=packet_loss_pct,json=packetLossPct,proto3" json:"packet_loss_pct,omitempty"`
+	CpuUtilizationPct      float64                `protobuf:"fixed64,7,opt,name=cpu_utilization_pct,json=cpuUtilizationPct,proto3" json:"cpu_utilization_pct,omitempty"`
+	MemoryUtilizationPct   float64                `protobuf:"fixed64,8,opt,name=memory_utilization_pct,json=memoryUtilizationPct,proto3" json:"memory_utilization_pct,omitempty"`
+	RecordedAtUnix         int64                  `protobuf:"varint,9,opt,name=recorded_at_unix,json=recordedAtUnix,proto3" json:"recorded_at_unix,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *RelayHealth) Reset() {
+	*x = RelayHealth{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayHealth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayHealth) ProtoMessage() {}
+
+func (x *RelayHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayHealth.ProtoReflect.Descriptor instead.
+func (*RelayHealth) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RelayHealth) GetRttMillis() int64 {
+	if x != nil {
+		return x.RttMillis
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetHeartbeatLatencyMillis() int64 {
+	if x != nil {
+		return x.HeartbeatLatencyMillis
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetActiveTunnels() int32 {
+	if x != nil {
+		return x.ActiveTunnels
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetActiveStreams() int32 {
+	if x != nil {
+		return x.ActiveStreams
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetBytesPerSecond() int64 {
+	if x != nil {
+		return x.BytesPerSecond
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetPacketLossPct() float64 {
+	if x != nil {
+		return x.PacketLossPct
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetCpuUtilizationPct() float64 {
+	if x != nil {
+		return x.CpuUtilizationPct
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetMemoryUtilizationPct() float64 {
+	if x != nil {
+		return x.MemoryUtilizationPct
+	}
+	return 0
+}
+
+func (x *RelayHealth) GetRecordedAtUnix() int64 {
+	if x != nil {
+		return x.RecordedAtUnix
+	}
+	return 0
+}
+
+type WatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventType     WatchEventType         `protobuf:"varint,1,opt,name=event_type,json=eventType,proto3,enum=tunneledge.registry.v1.WatchEventType" json:"event_type,omitempty"`
+	Tunnel        *GetTunnelResponse     `protobuf:"bytes,2,opt,name=tunnel,proto3" json:"tunnel,omitempty"`
+	Lease         *LeaseInfo             `protobuf:"bytes,3,opt,name=lease,proto3" json:"lease,omitempty"`
+	Relay         *RelayInfo             `protobuf:"bytes,4,opt,name=relay,proto3" json:"relay,omitempty"`
+	Health        *RelayHealth           `protobuf:"bytes,5,opt,name=health,proto3" json:"health,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchResponse) Reset() {
+	*x = WatchResponse{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchResponse) ProtoMessage() {}
+
+func (x *WatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
+func (*WatchResponse) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *WatchResponse) GetEventType() WatchEventType {
+	if x != nil {
+		return x.EventType
+	}
+	return WatchEventType_WATCH_EVENT_TYPE_UNSPECIFIED
+}
+
+func (x *WatchResponse) GetTunnel() *GetTunnelResponse {
+	if x != nil {
+		return x.Tunnel
+	}
+	return nil
+}
+
+func (x *WatchResponse) GetLease() *LeaseInfo {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
+func (x *WatchResponse) GetRelay() *RelayInfo {
+	if x != nil {
+		return x.Relay
+	}
+	return nil
+}
+
+func (x *WatchResponse) GetHealth() *RelayHealth {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+type AcquireLeaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TunnelId      string                 `protobuf:"bytes,1,opt,name=tunnel_id,json=tunnelId,proto3" json:"tunnel_id,omitempty"`
+	RelayId       string                 `protobuf:"bytes,2,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	TtlSeconds    int64                  `protobuf:"varint,3,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcquireLeaseRequest) Reset() {
+	*x = AcquireLeaseRequest{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcquireLeaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcquireLeaseRequest) ProtoMessage() {}
+
+func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcquireLeaseRequest.ProtoReflect.Descriptor instead.
+func (*AcquireLeaseRequest) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AcquireLeaseRequest) GetTunnelId() string {
+	if x != nil {
+		return x.TunnelId
+	}
+	return ""
+}
+
+func (x *AcquireLeaseRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *AcquireLeaseRequest) GetTtlSeconds() int64 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+type AcquireLeaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lease         *LeaseInfo             `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcquireLeaseResponse) Reset() {
+	*x = AcquireLeaseResponse{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcquireLeaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcquireLeaseResponse) ProtoMessage() {}
+
+func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcquireLeaseResponse.ProtoReflect.Descriptor instead.
+func (*AcquireLeaseResponse) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *AcquireLeaseResponse) GetLease() *LeaseInfo {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
+type RenewLeaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	TtlSeconds    int64                  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenewLeaseRequest) Reset() {
+	*x = RenewLeaseRequest{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenewLeaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenewLeaseRequest) ProtoMessage() {}
+
+func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenewLeaseRequest.ProtoReflect.Descriptor instead.
+func (*RenewLeaseRequest) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RenewLeaseRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *RenewLeaseRequest) GetTtlSeconds() int64 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+type RenewLeaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lease         *LeaseInfo             `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenewLeaseResponse) Reset() {
+	*x = RenewLeaseResponse{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenewLeaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenewLeaseResponse) ProtoMessage() {}
+
+func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenewLeaseResponse.ProtoReflect.Descriptor instead.
+func (*RenewLeaseResponse) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RenewLeaseResponse) GetLease() *LeaseInfo {
+	if x != nil {
+		return x.Lease
+	}
+	return nil
+}
+
+type ReleaseLeaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseLeaseRequest) Reset() {
+	*x = ReleaseLeaseRequest{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseLeaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseLeaseRequest) ProtoMessage() {}
+
+func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseLeaseRequest.ProtoReflect.Descriptor instead.
+func (*ReleaseLeaseRequest) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ReleaseLeaseRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+type ReleaseLeaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseLeaseResponse) Reset() {
+	*x = ReleaseLeaseResponse{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseLeaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseLeaseResponse) ProtoMessage() {}
+
+func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseLeaseResponse.ProtoReflect.Descriptor instead.
+func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{20}
+}
+
+type ReportRelayHealthRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RelayId       string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	Health        *RelayHealth           `protobuf:"bytes,2,opt,name=health,proto3" json:"health,omitempty"`
+	AdvertiseAddr string                 `protobuf:"bytes,3,opt,name=advertise_addr,json=advertiseAddr,proto3" json:"advertise_addr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportRelayHealthRequest) Reset() {
+	*x = ReportRelayHealthRequest{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRelayHealthRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRelayHealthRequest) ProtoMessage() {}
+
+func (x *ReportRelayHealthRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRelayHealthRequest.ProtoReflect.Descriptor instead.
+func (*ReportRelayHealthRequest) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ReportRelayHealthRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *ReportRelayHealthRequest) GetHealth() *RelayHealth {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *ReportRelayHealthRequest) GetAdvertiseAddr() string {
+	if x != nil {
+		return x.AdvertiseAddr
+	}
+	return ""
+}
+
+type ReportRelayHealthResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportRelayHealthResponse) Reset() {
+	*x = ReportRelayHealthResponse{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportRelayHealthResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportRelayHealthResponse) ProtoMessage() {}
+
+func (x *ReportRelayHealthResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportRelayHealthResponse.ProtoReflect.Descriptor instead.
+func (*ReportRelayHealthResponse) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{22}
+}
+
+type SubscribeRelayHealthRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RelayId        string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	IncludeCurrent bool                   `protobuf:"varint,2,opt,name=include_current,json=includeCurrent,proto3" json:"include_current,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SubscribeRelayHealthRequest) Reset() {
+	*x = SubscribeRelayHealthRequest{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeRelayHealthRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeRelayHealthRequest) ProtoMessage() {}
+
+func (x *SubscribeRelayHealthRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeRelayHealthRequest.ProtoReflect.Descriptor instead.
+func (*SubscribeRelayHealthRequest) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *SubscribeRelayHealthRequest) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *SubscribeRelayHealthRequest) GetIncludeCurrent() bool {
+	if x != nil {
+		return x.IncludeCurrent
+	}
+	return false
+}
+
+type SubscribeRelayHealthResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RelayId       string                 `protobuf:"bytes,1,opt,name=relay_id,json=relayId,proto3" json:"relay_id,omitempty"`
+	Health        *RelayHealth           `protobuf:"bytes,2,opt,name=health,proto3" json:"health,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeRelayHealthResponse) Reset() {
+	*x = SubscribeRelayHealthResponse{}
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeRelayHealthResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeRelayHealthResponse) ProtoMessage() {}
+
+func (x *SubscribeRelayHealthResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_registry_v1_registry_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeRelayHealthResponse.ProtoReflect.Descriptor instead.
+func (*SubscribeRelayHealthResponse) Descriptor() ([]byte, []int) {
+	return file_proto_registry_v1_registry_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SubscribeRelayHealthResponse) GetRelayId() string {
+	if x != nil {
+		return x.RelayId
+	}
+	return ""
+}
+
+func (x *SubscribeRelayHealthResponse) GetHealth() *RelayHealth {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
 var File_proto_registry_v1_registry_proto protoreflect.FileDescriptor
 
 const file_proto_registry_v1_registry_proto_rawDesc = "" +
@@ -546,7 +1507,7 @@ const file_proto_registry_v1_registry_proto_rawDesc = "" +
 	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\"\x1a\n" +
 	"\x18DeregisterTunnelResponse\"/\n" +
 	"\x10GetTunnelRequest\x12\x1b\n" +
-	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\"\xd1\x01\n" +
+	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\"\x92\x02\n" +
 	"\x11GetTunnelResponse\x12\x1b\n" +
 	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1f\n" +
@@ -556,20 +1517,99 @@ const file_proto_registry_v1_registry_proto_rawDesc = "" +
 	"local_addr\x18\x04 \x01(\tR\tlocalAddr\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\x03R\tcreatedAt\x12%\n" +
-	"\x0elast_heartbeat\x18\x06 \x01(\x03R\rlastHeartbeat\"\x14\n" +
+	"\x0elast_heartbeat\x18\x06 \x01(\x03R\rlastHeartbeat\x12$\n" +
+	"\x0eowner_relay_id\x18\a \x01(\tR\fownerRelayId\x12\x19\n" +
+	"\blease_id\x18\b \x01(\tR\aleaseId\"\x14\n" +
 	"\x12ListTunnelsRequest\"Z\n" +
 	"\x13ListTunnelsResponse\x12C\n" +
 	"\atunnels\x18\x01 \x03(\v2).tunneledge.registry.v1.GetTunnelResponseR\atunnels\"/\n" +
 	"\x10HeartbeatRequest\x12\x1b\n" +
 	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\")\n" +
 	"\x11HeartbeatResponse\x12\x14\n" +
-	"\x05alive\x18\x01 \x01(\bR\x05alive2\xa5\x04\n" +
+	"\x05alive\x18\x01 \x01(\bR\x05alive\"q\n" +
+	"\fWatchRequest\x12\x1b\n" +
+	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\x12\x19\n" +
+	"\brelay_id\x18\x02 \x01(\tR\arelayId\x12)\n" +
+	"\x10include_existing\x18\x03 \x01(\bR\x0fincludeExisting\"\xd7\x01\n" +
+	"\tRelayInfo\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12%\n" +
+	"\x0eadvertise_addr\x18\x02 \x01(\tR\radvertiseAddr\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12%\n" +
+	"\x0eactive_tunnels\x18\x04 \x01(\x05R\ractiveTunnels\x12%\n" +
+	"\x0eactive_streams\x18\x05 \x01(\x05R\ractiveStreams\x12$\n" +
+	"\x0elast_seen_unix\x18\x06 \x01(\x03R\flastSeenUnix\"\xa0\x01\n" +
+	"\tLeaseInfo\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1b\n" +
+	"\ttunnel_id\x18\x02 \x01(\tR\btunnelId\x12\x19\n" +
+	"\brelay_id\x18\x03 \x01(\tR\arelayId\x12&\n" +
+	"\x0fexpires_at_unix\x18\x04 \x01(\x03R\rexpiresAtUnix\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\x03R\aversion\"\x96\x03\n" +
+	"\vRelayHealth\x12\x1d\n" +
+	"\n" +
+	"rtt_millis\x18\x01 \x01(\x03R\trttMillis\x128\n" +
+	"\x18heartbeat_latency_millis\x18\x02 \x01(\x03R\x16heartbeatLatencyMillis\x12%\n" +
+	"\x0eactive_tunnels\x18\x03 \x01(\x05R\ractiveTunnels\x12%\n" +
+	"\x0eactive_streams\x18\x04 \x01(\x05R\ractiveStreams\x12(\n" +
+	"\x10bytes_per_second\x18\x05 \x01(\x03R\x0ebytesPerSecond\x12&\n" +
+	"\x0fpacket_loss_pct\x18\x06 \x01(\x01R\rpacketLossPct\x12.\n" +
+	"\x13cpu_utilization_pct\x18\a \x01(\x01R\x11cpuUtilizationPct\x124\n" +
+	"\x16memory_utilization_pct\x18\b \x01(\x01R\x14memoryUtilizationPct\x12(\n" +
+	"\x10recorded_at_unix\x18\t \x01(\x03R\x0erecordedAtUnix\"\xc8\x02\n" +
+	"\rWatchResponse\x12E\n" +
+	"\n" +
+	"event_type\x18\x01 \x01(\x0e2&.tunneledge.registry.v1.WatchEventTypeR\teventType\x12A\n" +
+	"\x06tunnel\x18\x02 \x01(\v2).tunneledge.registry.v1.GetTunnelResponseR\x06tunnel\x127\n" +
+	"\x05lease\x18\x03 \x01(\v2!.tunneledge.registry.v1.LeaseInfoR\x05lease\x127\n" +
+	"\x05relay\x18\x04 \x01(\v2!.tunneledge.registry.v1.RelayInfoR\x05relay\x12;\n" +
+	"\x06health\x18\x05 \x01(\v2#.tunneledge.registry.v1.RelayHealthR\x06health\"n\n" +
+	"\x13AcquireLeaseRequest\x12\x1b\n" +
+	"\ttunnel_id\x18\x01 \x01(\tR\btunnelId\x12\x19\n" +
+	"\brelay_id\x18\x02 \x01(\tR\arelayId\x12\x1f\n" +
+	"\vttl_seconds\x18\x03 \x01(\x03R\n" +
+	"ttlSeconds\"O\n" +
+	"\x14AcquireLeaseResponse\x127\n" +
+	"\x05lease\x18\x01 \x01(\v2!.tunneledge.registry.v1.LeaseInfoR\x05lease\"O\n" +
+	"\x11RenewLeaseRequest\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1f\n" +
+	"\vttl_seconds\x18\x02 \x01(\x03R\n" +
+	"ttlSeconds\"M\n" +
+	"\x12RenewLeaseResponse\x127\n" +
+	"\x05lease\x18\x01 \x01(\v2!.tunneledge.registry.v1.LeaseInfoR\x05lease\"0\n" +
+	"\x13ReleaseLeaseRequest\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\x16\n" +
+	"\x14ReleaseLeaseResponse\"\x99\x01\n" +
+	"\x18ReportRelayHealthRequest\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12;\n" +
+	"\x06health\x18\x02 \x01(\v2#.tunneledge.registry.v1.RelayHealthR\x06health\x12%\n" +
+	"\x0eadvertise_addr\x18\x03 \x01(\tR\radvertiseAddr\"\x1b\n" +
+	"\x19ReportRelayHealthResponse\"a\n" +
+	"\x1bSubscribeRelayHealthRequest\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12'\n" +
+	"\x0finclude_current\x18\x02 \x01(\bR\x0eincludeCurrent\"v\n" +
+	"\x1cSubscribeRelayHealthResponse\x12\x19\n" +
+	"\brelay_id\x18\x01 \x01(\tR\arelayId\x12;\n" +
+	"\x06health\x18\x02 \x01(\v2#.tunneledge.registry.v1.RelayHealthR\x06health*\x97\x02\n" +
+	"\x0eWatchEventType\x12 \n" +
+	"\x1cWATCH_EVENT_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
+	" WATCH_EVENT_TYPE_TUNNEL_UPSERTED\x10\x01\x12#\n" +
+	"\x1fWATCH_EVENT_TYPE_TUNNEL_DELETED\x10\x02\x12#\n" +
+	"\x1fWATCH_EVENT_TYPE_LEASE_ACQUIRED\x10\x03\x12#\n" +
+	"\x1fWATCH_EVENT_TYPE_LEASE_RELEASED\x10\x04\x12#\n" +
+	"\x1fWATCH_EVENT_TYPE_RELAY_UPSERTED\x10\x05\x12)\n" +
+	"%WATCH_EVENT_TYPE_RELAY_HEALTH_UPDATED\x10\x062\xb8\t\n" +
 	"\x0fRegistryService\x12o\n" +
 	"\x0eRegisterTunnel\x12-.tunneledge.registry.v1.RegisterTunnelRequest\x1a..tunneledge.registry.v1.RegisterTunnelResponse\x12u\n" +
 	"\x10DeregisterTunnel\x12/.tunneledge.registry.v1.DeregisterTunnelRequest\x1a0.tunneledge.registry.v1.DeregisterTunnelResponse\x12`\n" +
 	"\tGetTunnel\x12(.tunneledge.registry.v1.GetTunnelRequest\x1a).tunneledge.registry.v1.GetTunnelResponse\x12f\n" +
 	"\vListTunnels\x12*.tunneledge.registry.v1.ListTunnelsRequest\x1a+.tunneledge.registry.v1.ListTunnelsResponse\x12`\n" +
-	"\tHeartbeat\x12(.tunneledge.registry.v1.HeartbeatRequest\x1a).tunneledge.registry.v1.HeartbeatResponseB)Z'tunneledge/proto/registry/v1;registryv1b\x06proto3"
+	"\tHeartbeat\x12(.tunneledge.registry.v1.HeartbeatRequest\x1a).tunneledge.registry.v1.HeartbeatResponse\x12V\n" +
+	"\x05Watch\x12$.tunneledge.registry.v1.WatchRequest\x1a%.tunneledge.registry.v1.WatchResponse0\x01\x12i\n" +
+	"\fAcquireLease\x12+.tunneledge.registry.v1.AcquireLeaseRequest\x1a,.tunneledge.registry.v1.AcquireLeaseResponse\x12c\n" +
+	"\n" +
+	"RenewLease\x12).tunneledge.registry.v1.RenewLeaseRequest\x1a*.tunneledge.registry.v1.RenewLeaseResponse\x12i\n" +
+	"\fReleaseLease\x12+.tunneledge.registry.v1.ReleaseLeaseRequest\x1a,.tunneledge.registry.v1.ReleaseLeaseResponse\x12x\n" +
+	"\x11ReportRelayHealth\x120.tunneledge.registry.v1.ReportRelayHealthRequest\x1a1.tunneledge.registry.v1.ReportRelayHealthResponse\x12\x83\x01\n" +
+	"\x14SubscribeRelayHealth\x123.tunneledge.registry.v1.SubscribeRelayHealthRequest\x1a4.tunneledge.registry.v1.SubscribeRelayHealthResponse0\x01B)Z'tunneledge/proto/registry/v1;registryv1b\x06proto3"
 
 var (
 	file_proto_registry_v1_registry_proto_rawDescOnce sync.Once
@@ -583,36 +1623,74 @@ func file_proto_registry_v1_registry_proto_rawDescGZIP() []byte {
 	return file_proto_registry_v1_registry_proto_rawDescData
 }
 
-var file_proto_registry_v1_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_proto_registry_v1_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_registry_v1_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_proto_registry_v1_registry_proto_goTypes = []any{
-	(*RegisterTunnelRequest)(nil),    // 0: tunneledge.registry.v1.RegisterTunnelRequest
-	(*RegisterTunnelResponse)(nil),   // 1: tunneledge.registry.v1.RegisterTunnelResponse
-	(*DeregisterTunnelRequest)(nil),  // 2: tunneledge.registry.v1.DeregisterTunnelRequest
-	(*DeregisterTunnelResponse)(nil), // 3: tunneledge.registry.v1.DeregisterTunnelResponse
-	(*GetTunnelRequest)(nil),         // 4: tunneledge.registry.v1.GetTunnelRequest
-	(*GetTunnelResponse)(nil),        // 5: tunneledge.registry.v1.GetTunnelResponse
-	(*ListTunnelsRequest)(nil),       // 6: tunneledge.registry.v1.ListTunnelsRequest
-	(*ListTunnelsResponse)(nil),      // 7: tunneledge.registry.v1.ListTunnelsResponse
-	(*HeartbeatRequest)(nil),         // 8: tunneledge.registry.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),        // 9: tunneledge.registry.v1.HeartbeatResponse
+	(WatchEventType)(0),                  // 0: tunneledge.registry.v1.WatchEventType
+	(*RegisterTunnelRequest)(nil),        // 1: tunneledge.registry.v1.RegisterTunnelRequest
+	(*RegisterTunnelResponse)(nil),       // 2: tunneledge.registry.v1.RegisterTunnelResponse
+	(*DeregisterTunnelRequest)(nil),      // 3: tunneledge.registry.v1.DeregisterTunnelRequest
+	(*DeregisterTunnelResponse)(nil),     // 4: tunneledge.registry.v1.DeregisterTunnelResponse
+	(*GetTunnelRequest)(nil),             // 5: tunneledge.registry.v1.GetTunnelRequest
+	(*GetTunnelResponse)(nil),            // 6: tunneledge.registry.v1.GetTunnelResponse
+	(*ListTunnelsRequest)(nil),           // 7: tunneledge.registry.v1.ListTunnelsRequest
+	(*ListTunnelsResponse)(nil),          // 8: tunneledge.registry.v1.ListTunnelsResponse
+	(*HeartbeatRequest)(nil),             // 9: tunneledge.registry.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),            // 10: tunneledge.registry.v1.HeartbeatResponse
+	(*WatchRequest)(nil),                 // 11: tunneledge.registry.v1.WatchRequest
+	(*RelayInfo)(nil),                    // 12: tunneledge.registry.v1.RelayInfo
+	(*LeaseInfo)(nil),                    // 13: tunneledge.registry.v1.LeaseInfo
+	(*RelayHealth)(nil),                  // 14: tunneledge.registry.v1.RelayHealth
+	(*WatchResponse)(nil),                // 15: tunneledge.registry.v1.WatchResponse
+	(*AcquireLeaseRequest)(nil),          // 16: tunneledge.registry.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),         // 17: tunneledge.registry.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),            // 18: tunneledge.registry.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),           // 19: tunneledge.registry.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),          // 20: tunneledge.registry.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),         // 21: tunneledge.registry.v1.ReleaseLeaseResponse
+	(*ReportRelayHealthRequest)(nil),     // 22: tunneledge.registry.v1.ReportRelayHealthRequest
+	(*ReportRelayHealthResponse)(nil),    // 23: tunneledge.registry.v1.ReportRelayHealthResponse
+	(*SubscribeRelayHealthRequest)(nil),  // 24: tunneledge.registry.v1.SubscribeRelayHealthRequest
+	(*SubscribeRelayHealthResponse)(nil), // 25: tunneledge.registry.v1.SubscribeRelayHealthResponse
 }
 var file_proto_registry_v1_registry_proto_depIdxs = []int32{
-	5, // 0: tunneledge.registry.v1.ListTunnelsResponse.tunnels:type_name -> tunneledge.registry.v1.GetTunnelResponse
-	0, // 1: tunneledge.registry.v1.RegistryService.RegisterTunnel:input_type -> tunneledge.registry.v1.RegisterTunnelRequest
-	2, // 2: tunneledge.registry.v1.RegistryService.DeregisterTunnel:input_type -> tunneledge.registry.v1.DeregisterTunnelRequest
-	4, // 3: tunneledge.registry.v1.RegistryService.GetTunnel:input_type -> tunneledge.registry.v1.GetTunnelRequest
-	6, // 4: tunneledge.registry.v1.RegistryService.ListTunnels:input_type -> tunneledge.registry.v1.ListTunnelsRequest
-	8, // 5: tunneledge.registry.v1.RegistryService.Heartbeat:input_type -> tunneledge.registry.v1.HeartbeatRequest
-	1, // 6: tunneledge.registry.v1.RegistryService.RegisterTunnel:output_type -> tunneledge.registry.v1.RegisterTunnelResponse
-	3, // 7: tunneledge.registry.v1.RegistryService.DeregisterTunnel:output_type -> tunneledge.registry.v1.DeregisterTunnelResponse
-	5, // 8: tunneledge.registry.v1.RegistryService.GetTunnel:output_type -> tunneledge.registry.v1.GetTunnelResponse
-	7, // 9: tunneledge.registry.v1.RegistryService.ListTunnels:output_type -> tunneledge.registry.v1.ListTunnelsResponse
-	9, // 10: tunneledge.registry.v1.RegistryService.Heartbeat:output_type -> tunneledge.registry.v1.HeartbeatResponse
-	6, // [6:11] is the sub-list for method output_type
-	1, // [1:6] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	6,  // 0: tunneledge.registry.v1.ListTunnelsResponse.tunnels:type_name -> tunneledge.registry.v1.GetTunnelResponse
+	0,  // 1: tunneledge.registry.v1.WatchResponse.event_type:type_name -> tunneledge.registry.v1.WatchEventType
+	6,  // 2: tunneledge.registry.v1.WatchResponse.tunnel:type_name -> tunneledge.registry.v1.GetTunnelResponse
+	13, // 3: tunneledge.registry.v1.WatchResponse.lease:type_name -> tunneledge.registry.v1.LeaseInfo
+	12, // 4: tunneledge.registry.v1.WatchResponse.relay:type_name -> tunneledge.registry.v1.RelayInfo
+	14, // 5: tunneledge.registry.v1.WatchResponse.health:type_name -> tunneledge.registry.v1.RelayHealth
+	13, // 6: tunneledge.registry.v1.AcquireLeaseResponse.lease:type_name -> tunneledge.registry.v1.LeaseInfo
+	13, // 7: tunneledge.registry.v1.RenewLeaseResponse.lease:type_name -> tunneledge.registry.v1.LeaseInfo
+	14, // 8: tunneledge.registry.v1.ReportRelayHealthRequest.health:type_name -> tunneledge.registry.v1.RelayHealth
+	14, // 9: tunneledge.registry.v1.SubscribeRelayHealthResponse.health:type_name -> tunneledge.registry.v1.RelayHealth
+	1,  // 10: tunneledge.registry.v1.RegistryService.RegisterTunnel:input_type -> tunneledge.registry.v1.RegisterTunnelRequest
+	3,  // 11: tunneledge.registry.v1.RegistryService.DeregisterTunnel:input_type -> tunneledge.registry.v1.DeregisterTunnelRequest
+	5,  // 12: tunneledge.registry.v1.RegistryService.GetTunnel:input_type -> tunneledge.registry.v1.GetTunnelRequest
+	7,  // 13: tunneledge.registry.v1.RegistryService.ListTunnels:input_type -> tunneledge.registry.v1.ListTunnelsRequest
+	9,  // 14: tunneledge.registry.v1.RegistryService.Heartbeat:input_type -> tunneledge.registry.v1.HeartbeatRequest
+	11, // 15: tunneledge.registry.v1.RegistryService.Watch:input_type -> tunneledge.registry.v1.WatchRequest
+	16, // 16: tunneledge.registry.v1.RegistryService.AcquireLease:input_type -> tunneledge.registry.v1.AcquireLeaseRequest
+	18, // 17: tunneledge.registry.v1.RegistryService.RenewLease:input_type -> tunneledge.registry.v1.RenewLeaseRequest
+	20, // 18: tunneledge.registry.v1.RegistryService.ReleaseLease:input_type -> tunneledge.registry.v1.ReleaseLeaseRequest
+	22, // 19: tunneledge.registry.v1.RegistryService.ReportRelayHealth:input_type -> tunneledge.registry.v1.ReportRelayHealthRequest
+	24, // 20: tunneledge.registry.v1.RegistryService.SubscribeRelayHealth:input_type -> tunneledge.registry.v1.SubscribeRelayHealthRequest
+	2,  // 21: tunneledge.registry.v1.RegistryService.RegisterTunnel:output_type -> tunneledge.registry.v1.RegisterTunnelResponse
+	4,  // 22: tunneledge.registry.v1.RegistryService.DeregisterTunnel:output_type -> tunneledge.registry.v1.DeregisterTunnelResponse
+	6,  // 23: tunneledge.registry.v1.RegistryService.GetTunnel:output_type -> tunneledge.registry.v1.GetTunnelResponse
+	8,  // 24: tunneledge.registry.v1.RegistryService.ListTunnels:output_type -> tunneledge.registry.v1.ListTunnelsResponse
+	10, // 25: tunneledge.registry.v1.RegistryService.Heartbeat:output_type -> tunneledge.registry.v1.HeartbeatResponse
+	15, // 26: tunneledge.registry.v1.RegistryService.Watch:output_type -> tunneledge.registry.v1.WatchResponse
+	17, // 27: tunneledge.registry.v1.RegistryService.AcquireLease:output_type -> tunneledge.registry.v1.AcquireLeaseResponse
+	19, // 28: tunneledge.registry.v1.RegistryService.RenewLease:output_type -> tunneledge.registry.v1.RenewLeaseResponse
+	21, // 29: tunneledge.registry.v1.RegistryService.ReleaseLease:output_type -> tunneledge.registry.v1.ReleaseLeaseResponse
+	23, // 30: tunneledge.registry.v1.RegistryService.ReportRelayHealth:output_type -> tunneledge.registry.v1.ReportRelayHealthResponse
+	25, // 31: tunneledge.registry.v1.RegistryService.SubscribeRelayHealth:output_type -> tunneledge.registry.v1.SubscribeRelayHealthResponse
+	21, // [21:32] is the sub-list for method output_type
+	10, // [10:21] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_proto_registry_v1_registry_proto_init() }
@@ -625,13 +1703,14 @@ func file_proto_registry_v1_registry_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_registry_v1_registry_proto_rawDesc), len(file_proto_registry_v1_registry_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   10,
+			NumEnums:      1,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_proto_registry_v1_registry_proto_goTypes,
 		DependencyIndexes: file_proto_registry_v1_registry_proto_depIdxs,
+		EnumInfos:         file_proto_registry_v1_registry_proto_enumTypes,
 		MessageInfos:      file_proto_registry_v1_registry_proto_msgTypes,
 	}.Build()
 	File_proto_registry_v1_registry_proto = out.File

@@ -24,38 +24,48 @@ type activeTunnel struct {
 	tunnel   *domain.ActiveTunnel
 	conn     *quic.Conn
 	routeMap map[string]string
+	leaseID  string
 }
 
 type Gateway struct {
-	mu                sync.RWMutex
-	tunnels           map[string]*activeTunnel
-	router            *TunnelRouter
-	streamManager     *stream.Manager
-	authenticator     auth.Authenticator
-	registryClient    domain.RegistryClient
-	metrics           *metrics.Metrics
-	quicListenAddr    string
-	publicListenAddr  string
-	baseDomain        string
-	tlsCertFile       string
-	tlsKeyFile        string
-	maxStreams        int64
-	shutdownTimeout   time.Duration
-	streamIdleTimeout time.Duration
+	mu                   sync.RWMutex
+	tunnels              map[string]*activeTunnel
+	router               *TunnelRouter
+	distRouter           *DistributedRouter
+	streamManager        *stream.Manager
+	authenticator        auth.Authenticator
+	registryClient       domain.RegistryClient
+	metrics              *metrics.Metrics
+	relayID              string
+	advertiseAddr        string
+	quicListenAddr       string
+	publicListenAddr     string
+	baseDomain           string
+	tlsCertFile          string
+	tlsKeyFile           string
+	leaseTTL             time.Duration
+	healthReportInterval time.Duration
+	maxStreams           int64
+	shutdownTimeout      time.Duration
+	streamIdleTimeout    time.Duration
 }
 
 type Options struct {
-	QUICListenAddr    string
-	PublicListenAddr  string
-	BaseDomain        string
-	TLSCertFile       string
-	TLSKeyFile        string
-	MaxStreams        int64
-	ShutdownTimeout   time.Duration
-	StreamIdleTimeout time.Duration
-	Authenticator     auth.Authenticator
-	RegistryClient    domain.RegistryClient
-	Metrics           *metrics.Metrics
+	QUICListenAddr       string
+	PublicListenAddr     string
+	BaseDomain           string
+	TLSCertFile          string
+	TLSKeyFile           string
+	MaxStreams           int64
+	ShutdownTimeout      time.Duration
+	StreamIdleTimeout    time.Duration
+	Authenticator        auth.Authenticator
+	RegistryClient       domain.RegistryClient
+	Metrics              *metrics.Metrics
+	RelayID              string
+	AdvertiseAddr        string
+	LeaseTTL             time.Duration
+	HealthReportInterval time.Duration
 }
 
 func NewGateway(opts Options) (*Gateway, error) {
@@ -66,22 +76,42 @@ func NewGateway(opts Options) (*Gateway, error) {
 		return nil, fmt.Errorf("registry client is required")
 	}
 
+	locRouter := NewTunnelRouter(opts.BaseDomain)
 	return &Gateway{
-		tunnels:           make(map[string]*activeTunnel),
-		router:            NewTunnelRouter(opts.BaseDomain),
-		streamManager:     stream.NewManager(),
-		authenticator:     opts.Authenticator,
-		registryClient:    opts.RegistryClient,
-		metrics:           opts.Metrics,
-		quicListenAddr:    opts.QUICListenAddr,
-		publicListenAddr:  opts.PublicListenAddr,
-		baseDomain:        opts.BaseDomain,
-		tlsCertFile:       opts.TLSCertFile,
-		tlsKeyFile:        opts.TLSKeyFile,
-		maxStreams:        opts.MaxStreams,
-		shutdownTimeout:   gatewayShutdownTimeout(opts.ShutdownTimeout),
-		streamIdleTimeout: streamIdleTimeout(opts.StreamIdleTimeout),
+		tunnels:              make(map[string]*activeTunnel),
+		router:               locRouter,
+		distRouter:           NewDistributedRouter(opts.RelayID, opts.BaseDomain, locRouter),
+		streamManager:        stream.NewManager(),
+		authenticator:        opts.Authenticator,
+		registryClient:       opts.RegistryClient,
+		metrics:              opts.Metrics,
+		relayID:              opts.RelayID,
+		advertiseAddr:        opts.AdvertiseAddr,
+		quicListenAddr:       opts.QUICListenAddr,
+		publicListenAddr:     opts.PublicListenAddr,
+		baseDomain:           opts.BaseDomain,
+		tlsCertFile:          opts.TLSCertFile,
+		tlsKeyFile:           opts.TLSKeyFile,
+		leaseTTL:             gatewayLeaseTTL(opts.LeaseTTL),
+		healthReportInterval: gatewayHealthReportInterval(opts.HealthReportInterval),
+		maxStreams:           opts.MaxStreams,
+		shutdownTimeout:      gatewayShutdownTimeout(opts.ShutdownTimeout),
+		streamIdleTimeout:    streamIdleTimeout(opts.StreamIdleTimeout),
 	}, nil
+}
+
+func gatewayLeaseTTL(v time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return 45 * time.Second
+}
+
+func gatewayHealthReportInterval(v time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return 15 * time.Second
 }
 
 func gatewayShutdownTimeout(v time.Duration) time.Duration {
@@ -138,6 +168,12 @@ func (g *Gateway) Run(ctx context.Context) error {
 	group.Go(func() error {
 		return g.acceptPublicConnections(groupCtx, publicLn)
 	})
+	group.Go(func() error {
+		return g.reportRelayHealthLoop(groupCtx)
+	})
+	group.Go(func() error {
+		return g.distRouter.Run(groupCtx, g.registryClient)
+	})
 
 	<-ctx.Done()
 	cancel()
@@ -175,7 +211,6 @@ forceClose:
 
 	return nil
 }
-
 
 func (g *Gateway) acceptAgents(ctx context.Context, listener *quic.Listener) error {
 	workers, workerCtx := errgroup.WithContext(ctx)
@@ -229,13 +264,14 @@ func (g *Gateway) acceptPublicConnections(ctx context.Context, ln net.Listener) 
 	}
 }
 
-func (g *Gateway) addTunnel(tunnel *domain.ActiveTunnel, conn *quic.Conn) {
+func (g *Gateway) addTunnel(tunnel *domain.ActiveTunnel, conn *quic.Conn, leaseID string) {
 	g.mu.Lock()
 	routeMap := tunnel.RouteMap()
 	g.tunnels[tunnel.ID.String()] = &activeTunnel{
 		tunnel:   tunnel,
 		conn:     conn,
 		routeMap: routeMap,
+		leaseID:  leaseID,
 	}
 	g.mu.Unlock()
 }
@@ -270,8 +306,53 @@ func (g *Gateway) removeTunnel(tunnelID, reason string) {
 
 	log.Info().Str("tunnel_id", tunnelID).Str("reason", reason).Msg("tunnel removed")
 
+	if at.leaseID != "" {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := g.registryClient.ReleaseLease(releaseCtx, at.leaseID); err != nil {
+			log.Warn().Err(err).Str("tunnel_id", tunnelID).Str("lease_id", at.leaseID).Msg("failed to release tunnel lease")
+		}
+		cancel()
+	}
+
 	if err := g.registryClient.DeregisterTunnel(tunnelID); err != nil {
 		log.Warn().Err(err).Str("tunnel_id", tunnelID).Msg("failed to deregister from registry")
+	}
+}
+
+func (g *Gateway) acquireTunnelLease(ctx context.Context, tunnelID string) (*domain.Lease, error) {
+	return g.registryClient.AcquireLease(ctx, domain.LeaseRequest{
+		TunnelID: tunnelID,
+		RelayID:  g.relayID,
+		TTL:      g.leaseTTL,
+	})
+}
+
+func (g *Gateway) reportRelayHealthLoop(ctx context.Context) error {
+	report := func() {
+		health := domain.RelayHealth{
+			AdvertiseAddr: g.advertiseAddr,
+			ActiveTunnels: int32(g.ActiveTunnelCount()),
+			ActiveStreams: int32(g.ActiveStreamCount()),
+			RecordedAt:    time.Now(),
+		}
+		if err := g.registryClient.ReportRelayHealth(ctx, g.relayID, health); err != nil && ctx.Err() == nil {
+			log.Warn().Err(err).Str("relay_id", g.relayID).Msg("failed to report relay health")
+		}
+		if g.advertiseAddr != "" {
+			g.distRouter.UpdateRelayAddr(g.relayID, g.advertiseAddr)
+		}
+	}
+
+	report()
+	ticker := time.NewTicker(g.healthReportInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			report()
+		}
 	}
 }
 

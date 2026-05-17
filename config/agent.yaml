@@ -8,6 +8,9 @@ observability:
 
 agent:
   gateway_addr: localhost:4433
+  gateway_addrs:
+    - localhost:4433
+    - localhost:4434
   token: dev-token
   tunnels:
     - label: web

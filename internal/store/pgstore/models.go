@@ -18,6 +18,8 @@ type TunnelSessionModel struct {
 	gorm.Model
 	TunnelID       string `gorm:"index;size:128;not null"`
 	AgentID        string `gorm:"size:128;not null"`
+	OwnerRelayID   string `gorm:"index;size:128"`
+	LeaseID        string `gorm:"index;size:128"`
 	PublicHost     string `gorm:"size:256"`
 	LocalAddr      string `gorm:"size:256"`
 	RemoteAddr     string `gorm:"size:256"`
@@ -28,6 +30,47 @@ type TunnelSessionModel struct {
 }
 
 func (TunnelSessionModel) TableName() string { return "tunnel_sessions" }
+
+type RelayModel struct {
+	gorm.Model
+	RelayID       string `gorm:"uniqueIndex;size:128;not null"`
+	AdvertiseAddr string `gorm:"size:256"`
+	State         string `gorm:"size:32;index"`
+	ActiveTunnels int32
+	ActiveStreams int32
+	LastSeen      time.Time `gorm:"index"`
+}
+
+func (RelayModel) TableName() string { return "relay_registry" }
+
+type LeaseModel struct {
+	gorm.Model
+	LeaseID    string    `gorm:"uniqueIndex;size:128;not null"`
+	TunnelID   string    `gorm:"index;size:128;not null"`
+	RelayID    string    `gorm:"index;size:128;not null"`
+	State      string    `gorm:"size:32;index;not null"`
+	ExpiresAt  time.Time `gorm:"index;not null"`
+	ReleasedAt *time.Time
+	Version    int64 `gorm:"not null;default:1"`
+}
+
+func (LeaseModel) TableName() string { return "relay_leases" }
+
+type RelayHealthModel struct {
+	gorm.Model
+	RelayID                string `gorm:"uniqueIndex;size:128;not null"`
+	RTTMillis              int64
+	HeartbeatLatencyMillis int64
+	ActiveTunnels          int32
+	ActiveStreams          int32
+	BytesPerSecond         int64
+	PacketLossPct          float64
+	CPUUtilizationPct      float64
+	MemoryUtilizationPct   float64
+	RecordedAt             time.Time `gorm:"index;not null"`
+}
+
+func (RelayHealthModel) TableName() string { return "relay_health_snapshots" }
 
 type UserModel struct {
 	gorm.Model

@@ -72,17 +72,21 @@ func main() {
 	}
 
 	gw, err := gateway.NewGateway(gateway.Options{
-		QUICListenAddr:    cfg.Gateway.QUICListenAddr,
-		PublicListenAddr:  cfg.Gateway.PublicListenAddr,
-		BaseDomain:        cfg.Gateway.BaseDomain,
-		TLSCertFile:       cfg.Gateway.TLSCertFile,
-		TLSKeyFile:        cfg.Gateway.TLSKeyFile,
-		MaxStreams:        cfg.Gateway.MaxStreams,
-		ShutdownTimeout:   cfg.Gateway.ShutdownTimeout,
-		StreamIdleTimeout: cfg.Gateway.StreamIdleTimeout,
-		Authenticator:     authenticator,
-		RegistryClient:    registryClient,
-		Metrics:           m,
+		QUICListenAddr:       cfg.Gateway.QUICListenAddr,
+		PublicListenAddr:     cfg.Gateway.PublicListenAddr,
+		BaseDomain:           cfg.Gateway.BaseDomain,
+		RelayID:              cfg.Gateway.RelayID,
+		AdvertiseAddr:        cfg.Gateway.AdvertiseAddr,
+		TLSCertFile:          cfg.Gateway.TLSCertFile,
+		TLSKeyFile:           cfg.Gateway.TLSKeyFile,
+		LeaseTTL:             cfg.Gateway.LeaseTTL,
+		HealthReportInterval: cfg.Gateway.HealthReportInterval,
+		MaxStreams:           cfg.Gateway.MaxStreams,
+		ShutdownTimeout:      cfg.Gateway.ShutdownTimeout,
+		StreamIdleTimeout:    cfg.Gateway.StreamIdleTimeout,
+		Authenticator:        authenticator,
+		RegistryClient:       registryClient,
+		Metrics:              m,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create gateway")

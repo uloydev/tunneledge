@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +26,7 @@ import (
 )
 
 type Agent struct {
-	gatewayAddr       string
+	gatewayAddrs      []string
 	token             string
 	tunnels           []config.TunnelConfig
 	tunnelMap         map[string]string
@@ -53,6 +54,7 @@ type Agent struct {
 
 type Options struct {
 	GatewayAddr       string
+	GatewayAddrs      []string
 	Token             string
 	Tunnels           []config.TunnelConfig
 	ReconnectDelay    time.Duration
@@ -73,9 +75,10 @@ func NewAgent(opts Options) *Agent {
 	for _, t := range opts.Tunnels {
 		tunnelMap[t.Label] = t.LocalAddr
 	}
+	gatewayAddrs := normalizeGatewayAddrs(opts.GatewayAddr, opts.GatewayAddrs)
 
 	return &Agent{
-		gatewayAddr:       opts.GatewayAddr,
+		gatewayAddrs:      gatewayAddrs,
 		token:             opts.Token,
 		tunnels:           opts.Tunnels,
 		tunnelMap:         tunnelMap,
@@ -90,6 +93,27 @@ func NewAgent(opts Options) *Agent {
 		reconnectCh:       make(chan struct{}, 1),
 		eventCh:           opts.EventCh,
 	}
+}
+
+func normalizeGatewayAddrs(primary string, addrs []string) []string {
+	seen := make(map[string]struct{})
+	normalized := make([]string, 0, 1+len(addrs))
+	appendAddr := func(addr string) {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			return
+		}
+		if _, exists := seen[addr]; exists {
+			return
+		}
+		seen[addr] = struct{}{}
+		normalized = append(normalized, addr)
+	}
+	appendAddr(primary)
+	for _, addr := range addrs {
+		appendAddr(addr)
+	}
+	return normalized
 }
 
 // agentStreamIdleTimeout returns v when positive, otherwise the safe default of 30s.
@@ -157,7 +181,6 @@ func (a *Agent) Run(ctx context.Context) error {
 	return err
 }
 
-
 func (a *Agent) runConnectLoop(ctx context.Context) error {
 	attempts := 0
 	delay := a.reconnectDelay
@@ -172,7 +195,7 @@ func (a *Agent) runConnectLoop(ctx context.Context) error {
 		}
 
 		a.emitEvent(StatusUpdateEvent{Status: "Connecting"})
-		err := a.connect(ctx)
+		err := a.connectTargets(ctx)
 		if err == nil {
 			attempts = 0
 			delay = a.reconnectDelay
@@ -216,9 +239,30 @@ func (a *Agent) runConnectLoop(ctx context.Context) error {
 	}
 }
 
-func (a *Agent) connect(ctx context.Context) (err error) {
+func (a *Agent) connectTargets(ctx context.Context) error {
+	targets := append([]string(nil), a.gatewayAddrs...)
+	if len(targets) == 0 {
+		return fmt.Errorf("no gateway targets configured")
+	}
+
+	var lastErr error
+	for _, gatewayAddr := range targets {
+		err := a.connect(ctx, gatewayAddr)
+		if err == nil || ctx.Err() != nil {
+			return err
+		}
+		lastErr = err
+		log.Warn().Err(err).Str("gateway_addr", gatewayAddr).Msg("gateway target failed")
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no gateway targets configured")
+	}
+	return lastErr
+}
+
+func (a *Agent) connect(ctx context.Context, gatewayAddr string) (err error) {
 	ctx, span := otel.Tracer("tunneledge/agent").Start(ctx, "agent.connect",
-		trace.WithAttributes(attribute.String("gateway.addr", a.gatewayAddr)),
+		trace.WithAttributes(attribute.String("gateway.addr", gatewayAddr)),
 	)
 	defer func() {
 		if err != nil {
@@ -242,14 +286,14 @@ func (a *Agent) connect(ctx context.Context) (err error) {
 		}
 	}
 
-	conn, err := transport.QUICDial(ctx, a.gatewayAddr, tlsCfg)
+	conn, err := transport.QUICDial(ctx, gatewayAddr, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("failed to dial gateway: %w", err)
 	}
 
 	a.setConn(conn)
 
-	log.Info().Str("gateway_addr", a.gatewayAddr).Msg("QUIC connection established")
+	log.Info().Str("gateway_addr", gatewayAddr).Msg("QUIC connection established")
 	defer func() {
 		a.setConn(nil)
 		conn.CloseWithError(0, "agent shutting down")

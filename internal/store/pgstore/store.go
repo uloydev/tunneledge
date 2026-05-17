@@ -64,6 +64,9 @@ func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&TokenModel{},
 		&TunnelSessionModel{},
+		&RelayModel{},
+		&LeaseModel{},
+		&RelayHealthModel{},
 		&UserModel{},
 		&AgentProfileModel{},
 		&TunnelDefinitionModel{},

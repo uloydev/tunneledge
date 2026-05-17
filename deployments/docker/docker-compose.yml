@@ -1,3 +1,15 @@
+# Default TunnelEdge deployment topology.
+#
+# Phase 2 multi-active layout:
+#   - Two gateways with shared registry coordination.
+#   - Agent-side failover targets; either gateway can serve any tunnel via
+#     the distributed watch-driven router.
+#   - Single public TCP edge (nginx) that round-robins / fails over between
+#     gateways.
+#   - Registry uses the in-memory coordinator by default.
+#     For HA deployments uncomment TE_REGISTRY_ETCD_ENDPOINTS and ensure
+#     the etcd service is running.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -30,6 +42,8 @@ services:
       registry:
         condition: service_started
       gateway:
+        condition: service_started
+      gateway-2:
         condition: service_started
       dashboard:
         condition: service_started
@@ -74,10 +88,12 @@ services:
       - TE_OBSERVABILITY_METRICS_ENABLED=true
       - TE_OBSERVABILITY_METRICS_ADDR=:9090
       - TE_OBSERVABILITY_TRACING_ENABLED=false
-      # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
+      # Uncomment to enable the etcd coordinator for multi-instance HA:
+      # - TE_REGISTRY_ETCD_ENDPOINTS=http://etcd:2379
+      # - TE_REGISTRY_ETCD_DIAL_TIMEOUT=5s
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50051"]
       interval: 10s
@@ -92,7 +108,6 @@ services:
       dockerfile: deployments/docker/Dockerfile.gateway
     ports:
       - "4433:4433/udp"
-      - "5443:443"
     depends_on:
       registry:
         condition: service_healthy
@@ -103,12 +118,16 @@ services:
       - TE_GATEWAY_PUBLIC_LISTEN_ADDR=:443
       - TE_GATEWAY_BASE_DOMAIN=tunneledge.uloy.dev
       - TE_GATEWAY_REGISTRY_ADDR=registry:50051
+      - TE_GATEWAY_RELAY_ID=gateway-1
+      - TE_GATEWAY_ADVERTISE_ADDR=gateway:4433
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
       - TE_OBSERVABILITY_METRICS_ENABLED=true
       - TE_OBSERVABILITY_METRICS_ADDR=:9090
       - TE_OBSERVABILITY_TRACING_ENABLED=false
       # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
+      - TE_GATEWAY_LEASE_TTL=45s
+      - TE_GATEWAY_HEALTH_REPORT_INTERVAL=15s
       - TE_GATEWAY_SHUTDOWN_TIMEOUT=15s
       - TE_GATEWAY_STREAM_IDLE_TIMEOUT=30s
       - TE_DB_DRIVER=postgres
@@ -119,6 +138,59 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - tunneledge
+
+  gateway-2:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.gateway
+    ports:
+      - "4434:4433/udp"
+    depends_on:
+      registry:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - TE_GATEWAY_QUIC_LISTEN_ADDR=:4433
+      - TE_GATEWAY_PUBLIC_LISTEN_ADDR=:443
+      - TE_GATEWAY_BASE_DOMAIN=tunneledge.uloy.dev
+      - TE_GATEWAY_REGISTRY_ADDR=registry:50051
+      - TE_GATEWAY_RELAY_ID=gateway-2
+      - TE_GATEWAY_ADVERTISE_ADDR=gateway-2:4433
+      - TE_LOG_LEVEL=info
+      - TE_LOG_FORMAT=json
+      - TE_OBSERVABILITY_METRICS_ENABLED=true
+      - TE_OBSERVABILITY_METRICS_ADDR=:9090
+      - TE_OBSERVABILITY_TRACING_ENABLED=false
+      # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
+      - TE_GATEWAY_LEASE_TTL=45s
+      - TE_GATEWAY_HEALTH_REPORT_INTERVAL=15s
+      - TE_GATEWAY_SHUTDOWN_TIMEOUT=15s
+      - TE_GATEWAY_STREAM_IDLE_TIMEOUT=30s
+      - TE_DB_DRIVER=postgres
+      - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
+      - TE_DB_AUTO_MIGRATE=true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tunneledge
+
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - "5443:443"
+    volumes:
+      - ./nginx-stream.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+      gateway-2:
+        condition: service_healthy
     networks:
       - tunneledge
 
@@ -176,6 +248,8 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      gateway-2:
+        condition: service_healthy
     environment:
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
@@ -188,7 +262,8 @@ services:
       - TE_AGENT_STREAM_IDLE_TIMEOUT=30s
     command:
       - headless
-      - --gateway-addr=gateway:4433
+      - --gateway-addrs=gateway:4433
+      - --gateway-addrs=gateway-2:4433
       - --token=dev-token
       - --metrics-addr=:9090
       # - --tunnel=web=echo:6666
@@ -249,7 +324,44 @@ services:
 volumes:
   pgdata:
   grafana-data:
+  # etcd-data:  # uncomment when etcd service is enabled
 
 networks:
   tunneledge:
     driver: bridge
+
+# ─── etcd (optional — enable for HA registry coordination) ──────────────────
+# To use etcd as the coordination backend:
+#   1. Uncomment the etcd service block below.
+#   2. Uncomment TE_REGISTRY_ETCD_ENDPOINTS in the registry service.
+#   3. Uncomment the etcd-data volume above.
+#
+# x-etcd: &etcd-base
+#   image: quay.io/coreos/etcd:v3.5.21
+#   environment:
+#     - ETCD_AUTO_COMPACTION_MODE=revision
+#     - ETCD_AUTO_COMPACTION_RETENTION=1000
+#     - ETCD_QUOTA_BACKEND_BYTES=4294967296
+#   networks:
+#     - tunneledge
+#
+# services:
+#   etcd:
+#     <<: *etcd-base
+#     command: >
+#       etcd
+#       --name etcd-0
+#       --data-dir /etcd
+#       --listen-client-urls http://0.0.0.0:2379
+#       --advertise-client-urls http://etcd:2379
+#       --listen-peer-urls http://0.0.0.0:2380
+#       --initial-cluster etcd-0=http://etcd:2380
+#       --initial-cluster-token tunneledge-etcd
+#       --initial-cluster-state new
+#     volumes:
+#       - etcd-data:/etcd
+#     healthcheck:
+#       test: ["CMD", "etcdctl", "endpoint", "health"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5

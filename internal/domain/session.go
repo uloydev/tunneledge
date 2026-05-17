@@ -7,6 +7,8 @@ import (
 type Session struct {
 	TunnelID      string
 	AgentID       string
+	OwnerRelayID  string
+	LeaseID       string
 	PublicAddr    string
 	LocalAddr     string
 	RemoteAddr    string

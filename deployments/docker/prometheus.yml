@@ -8,5 +8,6 @@ scrape_configs:
       - targets:
           - registry:9090
           - gateway:9090
+          - gateway-2:9090
           - dashboard:9090
           - agent:9090

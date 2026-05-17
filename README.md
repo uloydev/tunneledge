@@ -6,13 +6,22 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 
 ---
 
+## Phase Status
+
+- **Phase 1 — Stability & Hardening:** complete.
+- **Phase 2 — HA & Distributed Coordination:** **complete.** Multi-active gateway topology with watch-driven distributed routing, etcd coordination backend, relay lease management, health reporting, agent failover, and public TCP edge are all shipped.
+
+The default Docker Compose stack deploys two gateways behind an nginx TCP edge. Either gateway can serve any tunnel: if a public request arrives at `gateway-1` but the tunnel is owned by `gateway-2`, the connection is transparently proxied at L4. For HA registry coordination, point `TE_REGISTRY_ETCD_ENDPOINTS` at an etcd cluster — the in-memory coordinator is the single-node default.
+
+---
+
 ## Features
 
 - **QUIC Transport** — Low-latency, multiplexed streams over a single connection with built-in TLS 1.3
 - **TCP Forwarding** — Expose any local TCP service (HTTP, databases, custom protocols)
 - **Multiplexed Streams** — Multiple independent streams over a single QUIC connection, no head-of-line blocking
 - **SNI Domain Routing** — Each tunnel gets a unique subdomain (e.g., `web-agent-1.tunneledge.dev`), routed via TLS SNI on a single port
-- **Automatic Reconnection** — Exponential backoff with jitter on connection loss
+- **Automatic Reconnection** — Exponential backoff with jitter on connection loss, with support for multiple gateway targets during failover
 - **HMAC-prefilt Token Auth** — Per-entry HMAC fingerprint skips bcrypt for non-matching tokens; O(1) pre-filter
 - **Protocol Versioning** — `MsgHello` handshake frame carries `ProtocolVersion`; gateway rejects incompatible clients early
 - **Web Dashboard** — HTMX + SSE dashboard for managing agents and tunnels
@@ -22,6 +31,7 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 - **Structured Logging** — JSON logs with tunnel IDs, stream IDs, request IDs, trace IDs, and correlation context
 - **Prometheus Metrics** — Active tunnels, streams, bytes forwarded, reconnect counts, relay queue pressure, dropped frames, and error rates, with a default scrape target in Docker Compose
 - **Grafana Dashboards** — Pre-provisioned Grafana with a ready-to-use Prometheus datasource and a starter operations dashboard in Docker Compose
+- **Relay Leases & Health** — Gateways now acquire tunnel leases from the registry, renew ownership during heartbeats, and publish relay health for HA coordination
 - **Fail-Fast Config Validation** — Startup rejects invalid secrets, timeout combinations, and impossible runtime settings before the services begin accepting traffic
 - **Graceful Shutdown** — Proper SIGTERM handling with active stream cleanup
 - **Docker Compose** — Full stack deployment with one command
@@ -129,9 +139,9 @@ A single QUIC connection between agent and gateway supports **multiple concurren
 ### Reconnect Flow
 1. QUIC connection lost (network error, heartbeat timeout)
 2. Gateway and registry heartbeat state detect the disconnect and expire stale sessions
-3. Agent retries with exponential backoff (2s → 4s → 8s → ... → 30s max)
-4. Jitter added to prevent thundering herd
-5. Expired registry leases are treated as disconnect signals; the tunnel is re-registered on successful reconnect
+3. Gateway tunnel leases are renewed while the relay is healthy and released on disconnect
+4. Agent retries across its configured gateway target list with exponential backoff (2s → 4s → 8s → ... → 30s max)
+5. Expired registry leases are treated as disconnect signals; the tunnel is re-registered on successful reconnect to the next healthy gateway
 
 ---
 
@@ -245,8 +255,10 @@ make docker-down
 
 This starts:
 - **Registry** on port 50051
-- **Gateway** on UDP port 4433 (QUIC) and TCP port 443 (public TLS with SNI routing)
-- **Agent** connecting gateway → local echo service
+- **Gateway** on UDP port 4433 (primary QUIC relay)
+- **Gateway-2** on UDP port 4434 (standby QUIC relay)
+- **Edge** on TCP port 5443 forwarding public TLS traffic to the primary gateway and failing over to the standby gateway when needed
+- **Agent** connecting to both gateway targets for failover
 - **Prometheus** on port 9091 scraping registry, gateway, dashboard, and agent metrics
 - **Grafana** on port 3001 with a provisioned Prometheus datasource and TunnelEdge overview dashboard
 - **Echo service** (socat) on port 6666
@@ -254,6 +266,8 @@ This starts:
 Prometheus is the default metrics backend in the deployment stack because it fits the current implementation best: the services already expose useful low-cardinality metrics for relay pressure, reconnects, streams, and tunnel lifecycle. Grafana sits on top of that default stack to provide a ready-to-use dashboard without requiring you to hand-wire datasources after startup.
 
 Grafana is available at `http://localhost:3001` with the default dev credentials `admin` / `admin`.
+
+This Compose topology is the Phase 2 multi-active deployment: two gateways share a single registry, either can serve any tunnel via the distributed router, and the nginx TCP edge load-balances public connections across both. Enable etcd by uncommenting the `TE_REGISTRY_ETCD_ENDPOINTS` variable in the registry service.
 
 ### Environment Variables
 
@@ -310,6 +324,7 @@ All services use the `TE_` prefix:
 
 ## Future Improvements
 
+- Full Phase 3 security hardening: mTLS, token rotation, and audit logging
 - UDP forwarding support
 - HTTP tunnel mode with request inspection
 - Trace dashboards and exemplars (Grafana Tempo / Jaeger integration)

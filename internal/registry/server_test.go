@@ -12,7 +12,7 @@ import (
 
 func newServer() *registry.Server {
 	store := memstore.NewMemorySessionRepository()
-	srv := registry.NewServer(store, 10*time.Minute, 30*time.Minute)
+	srv := registry.NewServer(store, nil, 10*time.Minute, 30*time.Minute)
 	return srv
 }
 

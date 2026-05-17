@@ -19,11 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RegistryService_RegisterTunnel_FullMethodName   = "/tunneledge.registry.v1.RegistryService/RegisterTunnel"
-	RegistryService_DeregisterTunnel_FullMethodName = "/tunneledge.registry.v1.RegistryService/DeregisterTunnel"
-	RegistryService_GetTunnel_FullMethodName        = "/tunneledge.registry.v1.RegistryService/GetTunnel"
-	RegistryService_ListTunnels_FullMethodName      = "/tunneledge.registry.v1.RegistryService/ListTunnels"
-	RegistryService_Heartbeat_FullMethodName        = "/tunneledge.registry.v1.RegistryService/Heartbeat"
+	RegistryService_RegisterTunnel_FullMethodName       = "/tunneledge.registry.v1.RegistryService/RegisterTunnel"
+	RegistryService_DeregisterTunnel_FullMethodName     = "/tunneledge.registry.v1.RegistryService/DeregisterTunnel"
+	RegistryService_GetTunnel_FullMethodName            = "/tunneledge.registry.v1.RegistryService/GetTunnel"
+	RegistryService_ListTunnels_FullMethodName          = "/tunneledge.registry.v1.RegistryService/ListTunnels"
+	RegistryService_Heartbeat_FullMethodName            = "/tunneledge.registry.v1.RegistryService/Heartbeat"
+	RegistryService_Watch_FullMethodName                = "/tunneledge.registry.v1.RegistryService/Watch"
+	RegistryService_AcquireLease_FullMethodName         = "/tunneledge.registry.v1.RegistryService/AcquireLease"
+	RegistryService_RenewLease_FullMethodName           = "/tunneledge.registry.v1.RegistryService/RenewLease"
+	RegistryService_ReleaseLease_FullMethodName         = "/tunneledge.registry.v1.RegistryService/ReleaseLease"
+	RegistryService_ReportRelayHealth_FullMethodName    = "/tunneledge.registry.v1.RegistryService/ReportRelayHealth"
+	RegistryService_SubscribeRelayHealth_FullMethodName = "/tunneledge.registry.v1.RegistryService/SubscribeRelayHealth"
 )
 
 // RegistryServiceClient is the client API for RegistryService service.
@@ -35,6 +41,12 @@ type RegistryServiceClient interface {
 	GetTunnel(ctx context.Context, in *GetTunnelRequest, opts ...grpc.CallOption) (*GetTunnelResponse, error)
 	ListTunnels(ctx context.Context, in *ListTunnelsRequest, opts ...grpc.CallOption) (*ListTunnelsResponse, error)
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
+	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
+	AcquireLease(ctx context.Context, in *AcquireLeaseRequest, opts ...grpc.CallOption) (*AcquireLeaseResponse, error)
+	RenewLease(ctx context.Context, in *RenewLeaseRequest, opts ...grpc.CallOption) (*RenewLeaseResponse, error)
+	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
+	ReportRelayHealth(ctx context.Context, in *ReportRelayHealthRequest, opts ...grpc.CallOption) (*ReportRelayHealthResponse, error)
+	SubscribeRelayHealth(ctx context.Context, in *SubscribeRelayHealthRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeRelayHealthResponse], error)
 }
 
 type registryServiceClient struct {
@@ -95,6 +107,84 @@ func (c *registryServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequ
 	return out, nil
 }
 
+func (c *registryServiceClient) Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &RegistryService_ServiceDesc.Streams[0], RegistryService_Watch_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchRequest, WatchResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RegistryService_WatchClient = grpc.ServerStreamingClient[WatchResponse]
+
+func (c *registryServiceClient) AcquireLease(ctx context.Context, in *AcquireLeaseRequest, opts ...grpc.CallOption) (*AcquireLeaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AcquireLeaseResponse)
+	err := c.cc.Invoke(ctx, RegistryService_AcquireLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryServiceClient) RenewLease(ctx context.Context, in *RenewLeaseRequest, opts ...grpc.CallOption) (*RenewLeaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenewLeaseResponse)
+	err := c.cc.Invoke(ctx, RegistryService_RenewLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryServiceClient) ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReleaseLeaseResponse)
+	err := c.cc.Invoke(ctx, RegistryService_ReleaseLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryServiceClient) ReportRelayHealth(ctx context.Context, in *ReportRelayHealthRequest, opts ...grpc.CallOption) (*ReportRelayHealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportRelayHealthResponse)
+	err := c.cc.Invoke(ctx, RegistryService_ReportRelayHealth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *registryServiceClient) SubscribeRelayHealth(ctx context.Context, in *SubscribeRelayHealthRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeRelayHealthResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &RegistryService_ServiceDesc.Streams[1], RegistryService_SubscribeRelayHealth_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SubscribeRelayHealthRequest, SubscribeRelayHealthResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RegistryService_SubscribeRelayHealthClient = grpc.ServerStreamingClient[SubscribeRelayHealthResponse]
+
 // RegistryServiceServer is the server API for RegistryService service.
 // All implementations must embed UnimplementedRegistryServiceServer
 // for forward compatibility.
@@ -104,6 +194,12 @@ type RegistryServiceServer interface {
 	GetTunnel(context.Context, *GetTunnelRequest) (*GetTunnelResponse, error)
 	ListTunnels(context.Context, *ListTunnelsRequest) (*ListTunnelsResponse, error)
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
+	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
+	AcquireLease(context.Context, *AcquireLeaseRequest) (*AcquireLeaseResponse, error)
+	RenewLease(context.Context, *RenewLeaseRequest) (*RenewLeaseResponse, error)
+	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
+	ReportRelayHealth(context.Context, *ReportRelayHealthRequest) (*ReportRelayHealthResponse, error)
+	SubscribeRelayHealth(*SubscribeRelayHealthRequest, grpc.ServerStreamingServer[SubscribeRelayHealthResponse]) error
 	mustEmbedUnimplementedRegistryServiceServer()
 }
 
@@ -128,6 +224,24 @@ func (UnimplementedRegistryServiceServer) ListTunnels(context.Context, *ListTunn
 }
 func (UnimplementedRegistryServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedRegistryServiceServer) Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Watch not implemented")
+}
+func (UnimplementedRegistryServiceServer) AcquireLease(context.Context, *AcquireLeaseRequest) (*AcquireLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcquireLease not implemented")
+}
+func (UnimplementedRegistryServiceServer) RenewLease(context.Context, *RenewLeaseRequest) (*RenewLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RenewLease not implemented")
+}
+func (UnimplementedRegistryServiceServer) ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseLease not implemented")
+}
+func (UnimplementedRegistryServiceServer) ReportRelayHealth(context.Context, *ReportRelayHealthRequest) (*ReportRelayHealthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportRelayHealth not implemented")
+}
+func (UnimplementedRegistryServiceServer) SubscribeRelayHealth(*SubscribeRelayHealthRequest, grpc.ServerStreamingServer[SubscribeRelayHealthResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method SubscribeRelayHealth not implemented")
 }
 func (UnimplementedRegistryServiceServer) mustEmbedUnimplementedRegistryServiceServer() {}
 func (UnimplementedRegistryServiceServer) testEmbeddedByValue()                         {}
@@ -240,6 +354,100 @@ func _RegistryService_Heartbeat_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RegistryService_Watch_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(RegistryServiceServer).Watch(m, &grpc.GenericServerStream[WatchRequest, WatchResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RegistryService_WatchServer = grpc.ServerStreamingServer[WatchResponse]
+
+func _RegistryService_AcquireLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcquireLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceServer).AcquireLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegistryService_AcquireLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceServer).AcquireLease(ctx, req.(*AcquireLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RegistryService_RenewLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenewLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceServer).RenewLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegistryService_RenewLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceServer).RenewLease(ctx, req.(*RenewLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RegistryService_ReleaseLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceServer).ReleaseLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegistryService_ReleaseLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceServer).ReleaseLease(ctx, req.(*ReleaseLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RegistryService_ReportRelayHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportRelayHealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RegistryServiceServer).ReportRelayHealth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RegistryService_ReportRelayHealth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RegistryServiceServer).ReportRelayHealth(ctx, req.(*ReportRelayHealthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RegistryService_SubscribeRelayHealth_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeRelayHealthRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(RegistryServiceServer).SubscribeRelayHealth(m, &grpc.GenericServerStream[SubscribeRelayHealthRequest, SubscribeRelayHealthResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RegistryService_SubscribeRelayHealthServer = grpc.ServerStreamingServer[SubscribeRelayHealthResponse]
+
 // RegistryService_ServiceDesc is the grpc.ServiceDesc for RegistryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -267,7 +475,34 @@ var RegistryService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Heartbeat",
 			Handler:    _RegistryService_Heartbeat_Handler,
 		},
+		{
+			MethodName: "AcquireLease",
+			Handler:    _RegistryService_AcquireLease_Handler,
+		},
+		{
+			MethodName: "RenewLease",
+			Handler:    _RegistryService_RenewLease_Handler,
+		},
+		{
+			MethodName: "ReleaseLease",
+			Handler:    _RegistryService_ReleaseLease_Handler,
+		},
+		{
+			MethodName: "ReportRelayHealth",
+			Handler:    _RegistryService_ReportRelayHealth_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Watch",
+			Handler:       _RegistryService_Watch_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SubscribeRelayHealth",
+			Handler:       _RegistryService_SubscribeRelayHealth_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/registry/v1/registry.proto",
 }

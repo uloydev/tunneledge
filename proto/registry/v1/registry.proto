@@ -10,6 +10,12 @@ service RegistryService {
   rpc GetTunnel(GetTunnelRequest) returns (GetTunnelResponse);
   rpc ListTunnels(ListTunnelsRequest) returns (ListTunnelsResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+  rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+  rpc ReportRelayHealth(ReportRelayHealthRequest) returns (ReportRelayHealthResponse);
+  rpc SubscribeRelayHealth(SubscribeRelayHealthRequest) returns (stream SubscribeRelayHealthResponse);
 }
 
 message RegisterTunnelRequest {
@@ -42,6 +48,8 @@ message GetTunnelResponse {
   string local_addr = 4;
   int64  created_at = 5;
   int64  last_heartbeat = 6;
+  string owner_relay_id = 7;
+  string lease_id = 8;
 }
 
 message ListTunnelsRequest {}
@@ -56,4 +64,100 @@ message HeartbeatRequest {
 
 message HeartbeatResponse {
   bool alive = 1;
+}
+
+message WatchRequest {
+  string tunnel_id = 1;
+  string relay_id = 2;
+  bool include_existing = 3;
+}
+
+enum WatchEventType {
+  WATCH_EVENT_TYPE_UNSPECIFIED = 0;
+  WATCH_EVENT_TYPE_TUNNEL_UPSERTED = 1;
+  WATCH_EVENT_TYPE_TUNNEL_DELETED = 2;
+  WATCH_EVENT_TYPE_LEASE_ACQUIRED = 3;
+  WATCH_EVENT_TYPE_LEASE_RELEASED = 4;
+  WATCH_EVENT_TYPE_RELAY_UPSERTED = 5;
+  WATCH_EVENT_TYPE_RELAY_HEALTH_UPDATED = 6;
+}
+
+message RelayInfo {
+  string relay_id = 1;
+  string advertise_addr = 2;
+  string state = 3;
+  int32 active_tunnels = 4;
+  int32 active_streams = 5;
+  int64 last_seen_unix = 6;
+}
+
+message LeaseInfo {
+  string lease_id = 1;
+  string tunnel_id = 2;
+  string relay_id = 3;
+  int64 expires_at_unix = 4;
+  int64 version = 5;
+}
+
+message RelayHealth {
+  int64 rtt_millis = 1;
+  int64 heartbeat_latency_millis = 2;
+  int32 active_tunnels = 3;
+  int32 active_streams = 4;
+  int64 bytes_per_second = 5;
+  double packet_loss_pct = 6;
+  double cpu_utilization_pct = 7;
+  double memory_utilization_pct = 8;
+  int64 recorded_at_unix = 9;
+}
+
+message WatchResponse {
+  WatchEventType event_type = 1;
+  GetTunnelResponse tunnel = 2;
+  LeaseInfo lease = 3;
+  RelayInfo relay = 4;
+  RelayHealth health = 5;
+}
+
+message AcquireLeaseRequest {
+  string tunnel_id = 1;
+  string relay_id = 2;
+  int64 ttl_seconds = 3;
+}
+
+message AcquireLeaseResponse {
+  LeaseInfo lease = 1;
+}
+
+message RenewLeaseRequest {
+  string lease_id = 1;
+  int64 ttl_seconds = 2;
+}
+
+message RenewLeaseResponse {
+  LeaseInfo lease = 1;
+}
+
+message ReleaseLeaseRequest {
+  string lease_id = 1;
+}
+
+message ReleaseLeaseResponse {}
+
+message ReportRelayHealthRequest {
+  string relay_id = 1;
+  RelayHealth health = 2;
+  string advertise_addr = 3;
+}
+
+message ReportRelayHealthResponse {}
+
+message SubscribeRelayHealthRequest {
+  string relay_id = 1;
+  bool include_current = 2;
+}
+
+message SubscribeRelayHealthResponse {
+  string relay_id = 1;
+  RelayHealth health = 2;
 }

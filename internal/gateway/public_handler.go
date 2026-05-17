@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
 	"time"
 
@@ -49,6 +50,16 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 
 	tunnelID, label, ok := g.router.LookupWithLabel(hostname)
 	if !ok {
+		// Hostname not in the local routing table — check distributed router
+		// for a peer gateway that owns this tunnel.
+		if remote := g.distRouter.Lookup(hostname); remote != nil {
+			span.SetAttributes(
+				attribute.String("remote.relay_id", remote.OwnerRelayID),
+				attribute.String("remote.addr", remote.OwnerAddr),
+			)
+			g.proxyToRemoteGateway(ctx, conn, hostname, remote)
+			return
+		}
 		log.Warn().Str("hostname", hostname).Msg("unknown tunnel hostname")
 		conn.Close()
 		return
@@ -121,4 +132,54 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 	}
 
 	logger.Info().Int64("sent", result.Stats.GetSent()).Int64("received", result.Stats.GetReceived()).Msg("stream closed")
+}
+
+// proxyToRemoteGateway TCP-forwards the already-established TLS conn to the
+// public address of the gateway that holds the tunnel lease. The TLS stream is
+// forwarded opaquely (the outer TLS layer from the edge is preserved and the
+// inner application TLS negotiation is handled end-to-end by the owner
+// gateway). This is intentionally a simple L4 splice rather than a QUIC
+// stream because the remote gateway's public listener is a TLS/TCP endpoint.
+func (g *Gateway) proxyToRemoteGateway(ctx context.Context, conn net.Conn, hostname string, remote *remoteRoute) {
+	defer conn.Close()
+
+	if remote.OwnerAddr == "" {
+		log.Warn().
+			Str("hostname", hostname).
+			Str("owner_relay", remote.OwnerRelayID).
+			Msg("remote relay address unknown, cannot forward")
+		return
+	}
+
+	logger := log.With().
+		Str("hostname", hostname).
+		Str("owner_relay", remote.OwnerRelayID).
+		Str("owner_addr", remote.OwnerAddr).
+		Str("client_addr", conn.RemoteAddr().String()).
+		Logger()
+
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	dialer := &net.Dialer{}
+	upstream, err := dialer.DialContext(dialCtx, "tcp", remote.OwnerAddr)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to connect to remote gateway")
+		return
+	}
+	defer upstream.Close()
+
+	logger.Info().Msg("proxying public connection to remote gateway")
+
+	done := make(chan struct{}, 2)
+	copy := func(dst, src net.Conn) {
+		_, _ = io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	go copy(upstream, conn)
+	go copy(conn, upstream)
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }

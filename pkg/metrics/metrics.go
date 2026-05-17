@@ -15,18 +15,18 @@ import (
 type Metrics struct {
 	registry *prometheus.Registry
 
-	ActiveTunnels   prometheus.Gauge
-	ActiveStreams   prometheus.Gauge
-	BytesForwarded  *prometheus.CounterVec
-	StreamDuration  prometheus.Histogram
-	TunnelCreated   *prometheus.CounterVec
-	TunnelDestroyed *prometheus.CounterVec
-	ReconnectTotal  prometheus.Counter
+	ActiveTunnels      prometheus.Gauge
+	ActiveStreams      prometheus.Gauge
+	BytesForwarded     *prometheus.CounterVec
+	StreamDuration     prometheus.Histogram
+	TunnelCreated      *prometheus.CounterVec
+	TunnelDestroyed    *prometheus.CounterVec
+	ReconnectTotal     prometheus.Counter
 	RelayDroppedFrames prometheus.Counter
 	RelayQueueTimeouts prometheus.Counter
 	RelayWriteTimeouts prometheus.Counter
 	RelayQueueDepth    prometheus.Histogram
-	Errors          *prometheus.CounterVec
+	Errors             *prometheus.CounterVec
 }
 
 var (

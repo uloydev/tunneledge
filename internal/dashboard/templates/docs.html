@@ -170,7 +170,8 @@
 
       <!-- Quick Start -->
       <h2 id="quick-start">Quick Start</h2>
-      <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, gateway, dashboard, Mailpit for email, Prometheus for metrics, and Grafana for dashboards — starts with one command.</p>
+      <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, two coordinated gateways, a public TCP edge, dashboard, Mailpit for email, Prometheus for metrics, and Grafana for dashboards — starts with one command.</p>
+      <p><strong>Phase 2 status: complete.</strong> The shipped stack includes registry-backed relay leases, relay health reporting, agent failover across multiple gateway targets, a distributed watch-driven router (any gateway can serve any tunnel), an nginx public TCP edge, and an optional etcd coordination backend for HA registry deployments.</p>
 
       <h3>Prerequisites</h3>
       <ul>
@@ -197,6 +198,9 @@
         <pre><span class="sh-comment"># config/agent.yaml</span>
 <span class="sh-section">agent</span>:
   <span class="sh-key">gateway_addr</span>: <span class="sh-val">your-server.example.com:4433</span>
+  <span class="sh-key">gateway_addrs</span>:
+    - <span class="sh-val">your-server.example.com:4433</span>
+    - <span class="sh-val">your-server-backup.example.com:4433</span>
   <span class="sh-key">token</span>:        <span class="sh-val">te_xxxxxxxxxxxxxxxx</span>
   <span class="sh-key">tunnels</span>:
     - <span class="sh-key">label</span>:      <span class="sh-val">web</span>
@@ -210,12 +214,15 @@
       <!-- Docker Deploy -->
       <h2 id="docker-deploy">Docker Deploy</h2>
       <p>The <code>deployments/docker/docker-compose.yml</code> file defines the full production stack.</p>
+      <p>The default Compose file ships the Phase 2 multi-active topology: two gateways share a single registry, either can serve any tunnel, and the nginx TCP edge forwards public connections to whichever gateway holds the lease. Uncomment <code>TE_REGISTRY_ETCD_ENDPOINTS</code> in the registry service to enable the etcd coordinator for a fully HA registry.</p>
 
       <h3>Services</h3>
       <ul>
         <li><strong>postgres</strong> — PostgreSQL 16 (persistent volume <code>pgdata</code>)</li>
         <li><strong>registry</strong> — gRPC session registry on port <code>50051</code></li>
-        <li><strong>gateway</strong> — QUIC agent listener <code>:4433/udp</code>, public TLS <code>:443/tcp</code>, metrics <code>:9090</code>, optional OTLP trace export</li>
+        <li><strong>gateway</strong> — primary QUIC agent listener <code>:4433/udp</code>, public TLS upstream <code>:443/tcp</code>, metrics <code>:9090</code>, optional OTLP trace export</li>
+        <li><strong>gateway-2</strong> — standby QUIC agent listener <code>:4434/udp</code> with the same registry-backed lease and health reporting behavior</li>
+        <li><strong>edge</strong> — public TCP entrypoint on <code>:5443</code> that forwards TLS traffic to the primary gateway and fails over to the standby gateway</li>
         <li><strong>dashboard</strong> — HTTP API + HTMX web UI on <code>:8080</code> (mapped to <code>8082</code> in dev)</li>
         <li><strong>prometheus</strong> — Metrics UI on <code>:9091</code>, scraping registry, gateway, dashboard, and agent endpoints by default</li>
         <li><strong>grafana</strong> — Dashboard UI on <code>:3001</code>, provisioned with the Prometheus datasource and a TunnelEdge overview dashboard</li>

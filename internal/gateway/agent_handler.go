@@ -83,10 +83,10 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 
 	switch msgType {
 	case transport.MsgAuthV2:
-		agentID, tunnelID, publicAddr, localAddr, err = g.handleV2Auth(qstream, conn, logger)
+		agentID, tunnelID, publicAddr, localAddr, err = g.handleV2Auth(ctx, qstream, conn, logger)
 	case transport.MsgAuth:
 		r := io.MultiReader(bytes.NewReader([]byte{transport.MsgAuth}), qstream)
-		agentID, tunnelID, publicAddr, localAddr, err = g.handleV1Auth(r, qstream, conn, logger)
+		agentID, tunnelID, publicAddr, localAddr, err = g.handleV1Auth(ctx, r, qstream, conn, logger)
 	default:
 		logger.Error().Msgf("unexpected message type: 0x%02x", msgType)
 		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
@@ -104,6 +104,7 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	if err := g.registryClient.RegisterTunnel(tunnelID, agentID, publicAddr, localAddr); err != nil {
 		span.RecordError(err)
 		logger.Error().Err(err).Msg("failed to register tunnel with registry")
+		g.removeTunnel(tunnelID, "registry_error")
 		conn.CloseWithError(1, "registry error")
 		return
 	}
@@ -132,7 +133,7 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	_ = group.Wait()
 }
 
-func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
+func (g *Gateway) handleV1Auth(ctx context.Context, r io.Reader, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
 	authMsg, err := transport.DecodeAuth(r)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to decode auth message")
@@ -151,14 +152,22 @@ func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Con
 	publicHost := g.router.Register(tunnel.ID.String())
 	publicURL := fmt.Sprintf("%s:%s", publicHost, publicPort(g.publicListenAddr))
 	tunnel.PublicHosts["default"] = publicURL
-
-	if err := transport.EncodeAuthResponse(qstream, transport.AuthStatusOK, tunnel.ID.String(), publicURL); err != nil {
-		logger.Error().Err(err).Msg("failed to send auth response")
+	lease, err := g.acquireTunnelLease(ctx, tunnel.ID.String())
+	if err != nil {
+		logger.Warn().Err(err).Str("tunnel_id", tunnel.ID.String()).Msg("failed to acquire tunnel lease")
+		_ = transport.EncodeAuthResponse(qstream, transport.AuthStatusError, "", "")
 		g.router.Deregister(tunnel.ID.String())
 		return "", "", "", "", err
 	}
 
-	g.addTunnel(tunnel, conn)
+	if err := transport.EncodeAuthResponse(qstream, transport.AuthStatusOK, tunnel.ID.String(), publicURL); err != nil {
+		logger.Error().Err(err).Msg("failed to send auth response")
+		g.router.Deregister(tunnel.ID.String())
+		_ = g.registryClient.ReleaseLease(context.Background(), lease.LeaseID)
+		return "", "", "", "", err
+	}
+
+	g.addTunnel(tunnel, conn, lease.LeaseID)
 
 	logger.Info().
 		Str("tunnel_id", tunnel.ID.String()).
@@ -168,7 +177,7 @@ func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Con
 	return agentID, tunnel.ID.String(), publicURL, "", nil
 }
 
-func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
+func (g *Gateway) handleV2Auth(ctx context.Context, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
 	r := io.MultiReader(bytes.NewReader([]byte{transport.MsgAuthV2}), qstream)
 	authMsg, err := transport.DecodeAuthV2(r)
 	if err != nil {
@@ -197,6 +206,12 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 	}
 
 	tunnel := domain.NewActiveTunnel(agentID, routes)
+	lease, err := g.acquireTunnelLease(ctx, tunnel.ID.String())
+	if err != nil {
+		logger.Warn().Err(err).Str("tunnel_id", tunnel.ID.String()).Msg("failed to acquire tunnel lease")
+		_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
+		return "", "", "", "", err
+	}
 
 	var publicParts []string
 	var localParts []string
@@ -217,10 +232,11 @@ func (g *Gateway) handleV2Auth(qstream *quic.Stream, conn *quic.Conn, logger zer
 	if err := transport.EncodeAuthV2Response(qstream, transport.AuthStatusOK, tunnel.ID.String(), hostEntries); err != nil {
 		logger.Error().Err(err).Msg("failed to send auth v2 response")
 		g.router.DeregisterAll(tunnel.ID.String())
+		_ = g.registryClient.ReleaseLease(context.Background(), lease.LeaseID)
 		return "", "", "", "", err
 	}
 
-	g.addTunnel(tunnel, conn)
+	g.addTunnel(tunnel, conn, lease.LeaseID)
 
 	logger.Info().
 		Str("tunnel_id", tunnel.ID.String()).
@@ -299,6 +315,14 @@ func (g *Gateway) heartbeatLoop(ctx context.Context, tunnelID string) {
 				log.Warn().Str("tunnel_id", tunnelID).Msg("registry heartbeat reported expired session")
 				g.removeTunnel(tunnelID, "session_expired")
 				return
+			}
+			at, ok := g.getTunnel(tunnelID)
+			if ok && at.leaseID != "" {
+				if _, err := g.registryClient.RenewLease(ctx, at.leaseID, g.leaseTTL); err != nil {
+					log.Warn().Err(err).Str("tunnel_id", tunnelID).Str("lease_id", at.leaseID).Msg("failed to renew tunnel lease")
+					g.removeTunnel(tunnelID, "lease_lost")
+					return
+				}
 			}
 		}
 	}

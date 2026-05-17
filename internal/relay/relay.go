@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	defaultRelayBufferSize    = 32 * 1024
-	defaultRelayQueueSize     = 16
-	defaultRelayEnqueueWait   = 250 * time.Millisecond
-	defaultRelayWriteTimeout  = 2 * time.Second
+	defaultRelayBufferSize   = 32 * 1024
+	defaultRelayQueueSize    = 16
+	defaultRelayEnqueueWait  = 250 * time.Millisecond
+	defaultRelayWriteTimeout = 2 * time.Second
 )
 
 var ErrBackpressure = errors.New("relay backpressure timeout")
