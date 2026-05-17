@@ -10,6 +10,12 @@ dashboard:
   smtp_host: localhost
   smtp_port: 1025
   smtp_from: "noreply@tunneledge.dev"
+  # Phase 3: security hardening
+  # refresh_token_enabled: true
+  # refresh_token_ttl: 168h   # 7 days
+  # auth_rate_limit_rpm: 20
+  # max_failed_logins: 10
+  # lockout_duration: 15m
 
 db:
   driver: postgres

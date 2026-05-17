@@ -3,16 +3,41 @@ package dashboard
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
+	"tunneledge/internal/domain"
 	"tunneledge/pkg/errs"
 )
 
+// AuthHandler handles HTTP requests for authentication.
+// revokedRepo and refreshRepo are optional — nil disables the respective feature.
 type AuthHandler struct {
-	svc *AuthService
+	svc         *AuthService
+	revokedRepo domain.RevokedJTIRepository   // optional
+	refreshRepo domain.RefreshTokenRepository // optional
+	auditSvc    *AuditService                 // optional
 }
 
 func NewAuthHandler(svc *AuthService) *AuthHandler {
 	return &AuthHandler{svc: svc}
+}
+
+// WithRevocation enables JWT JTI revocation on logout.
+func (h *AuthHandler) WithRevocation(revokedRepo domain.RevokedJTIRepository) *AuthHandler {
+	h.revokedRepo = revokedRepo
+	return h
+}
+
+// WithRefreshRepo enables refresh token operations.
+func (h *AuthHandler) WithRefreshRepo(repo domain.RefreshTokenRepository) *AuthHandler {
+	h.refreshRepo = repo
+	return h
+}
+
+// WithAuditService enables audit logging for auth events.
+func (h *AuthHandler) WithAuditService(svc *AuditService) *AuthHandler {
+	h.auditSvc = svc
+	return h
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +111,49 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	out, err := h.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
+		h.auditSvc.Log(domain.AuditAuthFailure, req.Email, "", extractClientIP(r), map[string]any{"reason": err.Error()})
+		writeServiceError(r, w, err)
+		return
+	}
+
+	h.auditSvc.Log(domain.AuditAuthSuccess, req.Email, "", extractClientIP(r), nil)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    out.Token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  out.ExpiresAt,
+	})
+
+	if out.RefreshJTI != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "tunneledge_refresh",
+			Value:    out.RefreshJTI,
+			Path:     "/api/v1/auth/refresh",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			Expires:  out.RefreshExpiresAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, AuthResponse{
+		Token:     out.Token,
+		ExpiresAt: out.ExpiresAt.Unix(),
+	})
+}
+
+// Refresh issues a new short-lived access JWT using a valid refresh token.
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("tunneledge_refresh")
+	if err != nil || cookie.Value == "" {
+		writeError(w, http.StatusUnauthorized, "missing refresh token")
+		return
+	}
+
+	out, err := h.svc.RefreshAccessToken(r.Context(), cookie.Value)
+	if err != nil {
 		writeServiceError(r, w, err)
 		return
 	}
@@ -99,19 +167,42 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Expires:  out.ExpiresAt,
 	})
 
-	writeJSON(w, http.StatusOK, AuthResponse{
-		Token:     out.Token,
-		ExpiresAt: out.ExpiresAt.Unix(),
-	})
+	writeJSON(w, http.StatusOK, AuthResponse{Token: out.Token, ExpiresAt: out.ExpiresAt.Unix()})
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Revoke the current JWT jti if revocation is configured.
+	jti := JTIFromContext(r.Context())
+	var jtiExpiry time.Time
+	if jti != "" {
+		// Best-effort expiry from cookie — use TTL as fallback.
+		jtiExpiry = time.Now().Add(24 * time.Hour)
+	}
+
+	// Revoke refresh token if present.
+	var refreshJTI string
+	if cookie, err := r.Cookie("tunneledge_refresh"); err == nil {
+		refreshJTI = cookie.Value
+	}
+
+	if h.revokedRepo != nil || refreshJTI != "" {
+		h.svc.RevokeSession(r.Context(), jti, jtiExpiry, refreshJTI, h.revokedRepo)
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "tunneledge_refresh",
+		Value:    "",
+		Path:     "/api/v1/auth/refresh",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})

@@ -87,6 +87,12 @@ func main() {
 		Authenticator:        authenticator,
 		RegistryClient:       registryClient,
 		Metrics:              m,
+		// Phase 3: mTLS and abuse prevention
+		MTLSEnabled:         cfg.Gateway.MTLSEnabled,
+		ClientCAFile:        cfg.Gateway.ClientCAFile,
+		AuthRateLimitRPM:    cfg.Gateway.AuthRateLimitRPM,
+		MaxTunnelsPerAgent:  cfg.Gateway.MaxTunnelsPerAgent,
+		MaxStreamsPerTunnel: cfg.Gateway.MaxStreamsPerTunnel,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create gateway")

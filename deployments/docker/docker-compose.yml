@@ -94,6 +94,8 @@ services:
       # Uncomment to enable the etcd coordinator for multi-instance HA:
       # - TE_REGISTRY_ETCD_ENDPOINTS=http://etcd:2379
       # - TE_REGISTRY_ETCD_DIAL_TIMEOUT=5s
+      # Phase 3: gRPC rate limiting
+      # - TE_REGISTRY_AUTH_RATE_LIMIT_RPM=120
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50051"]
       interval: 10s
@@ -133,6 +135,13 @@ services:
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
+      # Phase 3: abuse prevention
+      # - TE_GATEWAY_AUTH_RATE_LIMIT_RPM=60
+      # - TE_GATEWAY_MAX_TUNNELS_PER_AGENT=10
+      # - TE_GATEWAY_MAX_STREAMS_PER_TUNNEL=100
+      # Phase 3: mTLS (mount certs volume)
+      # - TE_GATEWAY_MTLS_ENABLED=true
+      # - TE_GATEWAY_CLIENT_CA_FILE=/certs/ca.crt
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
       interval: 10s
@@ -238,6 +247,10 @@ services:
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
+      # Phase 3: security hardening
+      # - TE_DASHBOARD_REFRESH_TOKEN_ENABLED=true
+      # - TE_DASHBOARD_REFRESH_TOKEN_TTL=168h
+      # - TE_DASHBOARD_AUTH_RATE_LIMIT_RPM=20
     networks:
       - tunneledge
 

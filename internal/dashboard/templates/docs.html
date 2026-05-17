@@ -129,6 +129,16 @@
         <a href="#api-agents"    class="nav-link" :class="active==='api-agents'    && 'active'">Agents</a>
         <a href="#api-tunnels"   class="nav-link" :class="active==='api-tunnels'   && 'active'">Tunnels</a>
         <a href="#api-sessions"  class="nav-link" :class="active==='api-sessions'  && 'active'">Sessions</a>
+        <a href="#api-acls"      class="nav-link" :class="active==='api-acls'      && 'active'">Tunnel ACLs</a>
+        <a href="#api-audit"     class="nav-link" :class="active==='api-audit'     && 'active'">Audit Log</a>
+
+        <p class="nav-section">Security</p>
+        <a href="#security"      class="nav-link" :class="active==='security'      && 'active'">Overview</a>
+        <a href="#mtls"          class="nav-link" :class="active==='mtls'          && 'active'">mTLS</a>
+        <a href="#token-security" class="nav-link" :class="active==='token-security' && 'active'">Token Security</a>
+        <a href="#rate-limiting" class="nav-link" :class="active==='rate-limiting' && 'active'">Rate Limiting</a>
+        <a href="#acls"          class="nav-link" :class="active==='acls'          && 'active'">Tunnel ACLs</a>
+        <a href="#audit-log"     class="nav-link" :class="active==='audit-log'     && 'active'">Audit Log</a>
       </div>
     </aside>
 
@@ -141,7 +151,7 @@
           <span class="text-xs font-semibold uppercase tracking-widest text-brand-400">Documentation</span>
         </div>
         <h1 class="text-3xl font-extrabold text-white mb-3 tracking-tight">TunnelEdge</h1>
-        <p class="text-slate-400 text-base mb-6">A self-hosted reverse-tunnel platform built on QUIC. Expose any local TCP service to the internet without opening firewall ports — via encrypted QUIC multiplexed streams and SNI-based domain routing.</p>
+        <p class="text-slate-400 text-base mb-6">A self-hosted reverse-tunnel platform built on QUIC. Expose any local TCP service to the internet without opening firewall ports — via encrypted QUIC multiplexed streams and SNI-based domain routing. Includes Phase 2 multi-active HA with etcd coordination, and Phase 3 enterprise security: mTLS, JWT revocation, refresh tokens, tunnel CIDR ACLs, per-IP rate limiting, and a queryable audit log.</p>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
           <a href="#quick-start" class="glass rounded-xl p-4 hover:border-brand-500/30 transition group">
@@ -171,7 +181,7 @@
       <!-- Quick Start -->
       <h2 id="quick-start">Quick Start</h2>
       <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, two coordinated gateways, a public TCP edge, dashboard, Mailpit for email, Prometheus for metrics, and Grafana for dashboards — starts with one command.</p>
-      <p><strong>Phase 2 status: complete.</strong> The shipped stack includes registry-backed relay leases, relay health reporting, agent failover across multiple gateway targets, a distributed watch-driven router (any gateway can serve any tunnel), an nginx public TCP edge, and an optional etcd coordination backend for HA registry deployments.</p>
+      <p><strong>Phases 1–3 complete.</strong> The shipped stack includes registry-backed relay leases, relay health reporting, agent failover across multiple gateway targets, a distributed watch-driven router (any gateway can serve any tunnel), an nginx public TCP edge, an optional etcd coordination backend for HA registry deployments, and full Phase 3 enterprise security hardening.</p>
 
       <h3>Prerequisites</h3>
       <ul>
@@ -313,8 +323,15 @@
         <li>Rotate tokens any time via the dashboard or <code>POST /api/v1/agents/:id/rotate-token</code></li>
       </ul>
 
+      <h3>Token expiry &amp; account lockout (Phase 3)</h3>
+      <p>Each agent token can have an optional expiry timestamp. Expired tokens are rejected before the bcrypt step. After <strong>10 consecutive failed authentications</strong> (configurable via <code>TE_GATEWAY_MAX_FAILED_LOGINS</code>), the agent profile is locked for 15 minutes. The lockout duration and threshold are tunable via config.</p>
+
       <h3>Dashboard users</h3>
-      <p>Passwords are bcrypt-hashed at registration. Sessions use short-lived JWTs (HS256, 24 h default). Email verification is required before login. Rate limiting applies to <code>/api/v1/auth/login</code> and <code>/api/v1/auth/register</code> (5 requests/min per IP).</p>
+      <p>Passwords are bcrypt-hashed at registration. Sessions use short-lived JWTs (HS256, 24 h default) with <code>jti</code> (unique token ID) and <code>aud</code> (audience) claims. Email verification is required before login. Rate limiting applies to <code>/api/v1/auth/login</code> and <code>/api/v1/auth/register</code>.</p>
+
+      <h3>Refresh tokens &amp; JWT revocation (Phase 3)</h3>
+      <p>When <code>TE_DASHBOARD_REFRESH_TOKEN_ENABLED=true</code>, login issues an additional long-lived refresh token (7 days, configurable) stored in a <code>tunneledge_refresh</code> HTTP-only cookie. The access JWT remains short-lived. Use <code>POST /api/v1/auth/refresh</code> to exchange a valid refresh token for a new access JWT without re-authenticating.</p>
+      <p>On logout, both the access JWT's <code>jti</code> and the refresh token are revoked and stored in the <code>revoked_jtis</code> table. Every request on protected endpoints checks revocation before processing.</p>
 
       <!-- Config Files -->
       <h2 id="config-files">Config Files</h2>
@@ -337,10 +354,17 @@
   <span class="sh-key">public_listen_addr</span>: <span class="sh-val">:443</span>
   <span class="sh-key">base_domain</span>:        <span class="sh-val">tunneledge.example.com</span>
   <span class="sh-key">registry_addr</span>:      <span class="sh-val">localhost:50051</span>
-  <span class="sh-key">tls_cert_file</span>:      <span class="sh-val">certs/server.crt</span>
-  <span class="sh-key">tls_key_file</span>:       <span class="sh-val">certs/server.key</span>
+  <span class="sh-key">tls_cert_file</span>:      <span class="sh-val">certs/gateway.crt</span>
+  <span class="sh-key">tls_key_file</span>:       <span class="sh-val">certs/gateway.key</span>
   <span class="sh-key">shutdown_timeout</span>:   <span class="sh-val">15s</span>
   <span class="sh-key">stream_idle_timeout</span>: <span class="sh-val">30s</span>
+  <span class="sh-comment">  # Phase 3: mTLS for agents</span>
+  <span class="sh-key">mtls_enabled</span>:       <span class="sh-val">false</span>
+  <span class="sh-key">client_ca_file</span>:     <span class="sh-val">certs/ca.crt</span>
+  <span class="sh-comment">  # Phase 3: abuse prevention</span>
+  <span class="sh-key">auth_rate_limit_rpm</span>: <span class="sh-val">60</span>
+  <span class="sh-key">max_tunnels_per_agent</span>: <span class="sh-val">10</span>
+  <span class="sh-key">max_streams_per_tunnel</span>: <span class="sh-val">100</span>
 
 <span class="sh-section">db</span>:
   <span class="sh-key">driver</span>: <span class="sh-val">postgres</span>
@@ -363,6 +387,11 @@
   <span class="sh-key">heartbeat_interval</span>:  <span class="sh-val">15s</span>
   <span class="sh-key">stream_idle_timeout</span>: <span class="sh-val">30s</span>
   <span class="sh-key">tls_insecure</span>:        <span class="sh-val">false</span>
+  <span class="sh-comment">  # Phase 3: mTLS — present a client certificate to the gateway</span>
+  <span class="sh-key">mtls_enabled</span>:        <span class="sh-val">false</span>
+  <span class="sh-key">client_cert_file</span>:    <span class="sh-val">certs/agent.crt</span>
+  <span class="sh-key">client_key_file</span>:     <span class="sh-val">certs/agent.key</span>
+  <span class="sh-key">tls_ca_file</span>:         <span class="sh-val">certs/ca.crt</span>
   <span class="sh-key">tunnels</span>:
     - <span class="sh-key">label</span>:      <span class="sh-val">web</span>
       <span class="sh-key">local_addr</span>: <span class="sh-val">localhost:3000</span>
@@ -410,6 +439,11 @@
             <tr><td>TE_GATEWAY_MAX_STREAMS</td><td>1000</td><td>Max concurrent QUIC streams per connection</td></tr>
             <tr><td>TE_GATEWAY_SHUTDOWN_TIMEOUT</td><td>15s</td><td>Drain timeout before force-closing active streams</td></tr>
             <tr><td>TE_GATEWAY_STREAM_IDLE_TIMEOUT</td><td>30s</td><td>Idle timeout for relayed public streams</td></tr>
+            <tr><td>TE_GATEWAY_MTLS_ENABLED</td><td>false</td><td>Require client certificates from agents (Phase 3)</td></tr>
+            <tr><td>TE_GATEWAY_CLIENT_CA_FILE</td><td>—</td><td>CA cert PEM used to verify agent client certs</td></tr>
+            <tr><td>TE_GATEWAY_AUTH_RATE_LIMIT_RPM</td><td>0</td><td>Per-IP auth rate limit (req/min); 0 disables</td></tr>
+            <tr><td>TE_GATEWAY_MAX_TUNNELS_PER_AGENT</td><td>0</td><td>Max active tunnels per agent; 0 = unlimited</td></tr>
+            <tr><td>TE_GATEWAY_MAX_STREAMS_PER_TUNNEL</td><td>0</td><td>Max concurrent streams per tunnel; 0 = unlimited</td></tr>
           </tbody>
         </table>
       </div>
@@ -425,6 +459,7 @@
             <tr><td>TE_REGISTRY_TLS_CERT_FILE</td><td>—</td><td>gRPC TLS certificate PEM path</td></tr>
             <tr><td>TE_REGISTRY_TLS_KEY_FILE</td><td>—</td><td>gRPC TLS private key PEM path</td></tr>
             <tr><td>TE_REGISTRY_GRPC_AUTH_TOKEN</td><td>—</td><td>Expected bearer token from gateway</td></tr>
+            <tr><td>TE_REGISTRY_AUTH_RATE_LIMIT_RPM</td><td>0</td><td>Per-IP gRPC rate limit (req/min); 0 disables (Phase 3)</td></tr>
           </tbody>
         </table>
       </div>
@@ -441,6 +476,11 @@
             <tr><td>TE_DASHBOARD_SMTP_HOST</td><td>localhost</td><td>SMTP server host</td></tr>
             <tr><td>TE_DASHBOARD_SMTP_PORT</td><td>1025</td><td>SMTP server port</td></tr>
             <tr><td>TE_DASHBOARD_SMTP_FROM</td><td>noreply@tunneledge.dev</td><td>From address for verification emails</td></tr>
+            <tr><td>TE_DASHBOARD_REFRESH_TOKEN_ENABLED</td><td>false</td><td>Issue refresh tokens on login (Phase 3)</td></tr>
+            <tr><td>TE_DASHBOARD_REFRESH_TOKEN_TTL</td><td>168h</td><td>Refresh token lifetime (7 days default)</td></tr>
+            <tr><td>TE_DASHBOARD_AUTH_RATE_LIMIT_RPM</td><td>5</td><td>Per-IP login/register rate limit (req/min)</td></tr>
+            <tr><td>TE_DASHBOARD_MAX_FAILED_LOGINS</td><td>10</td><td>Failed attempts before agent lockout (Phase 3)</td></tr>
+            <tr><td>TE_DASHBOARD_LOCKOUT_DURATION</td><td>15m</td><td>Lockout window after max failed attempts</td></tr>
           </tbody>
         </table>
       </div>
@@ -458,6 +498,9 @@
             <tr><td>TE_AGENT_STREAM_IDLE_TIMEOUT</td><td>30s</td><td>Idle timeout for relayed agent streams</td></tr>
             <tr><td>TE_AGENT_TLS_INSECURE</td><td>false</td><td>Skip TLS cert verification (dev only)</td></tr>
             <tr><td>TE_AGENT_TLS_CA_FILE</td><td>—</td><td>Custom CA PEM for gateway TLS</td></tr>
+            <tr><td>TE_AGENT_MTLS_ENABLED</td><td>false</td><td>Present a client certificate to the gateway (Phase 3)</td></tr>
+            <tr><td>TE_AGENT_CLIENT_CERT_FILE</td><td>—</td><td>Client certificate PEM path for mTLS</td></tr>
+            <tr><td>TE_AGENT_CLIENT_KEY_FILE</td><td>—</td><td>Client private key PEM path for mTLS</td></tr>
           </tbody>
         </table>
       </div>
@@ -467,7 +510,7 @@
       <p>Base URL: <code>http://your-dashboard:8080/api/v1</code>. All protected endpoints require <code>Authorization: Bearer &lt;jwt&gt;</code> (or a <code>session</code> HTTP-only cookie set by login).</p>
 
       <h3>POST /auth/register</h3>
-      <p>Rate-limited to <strong>5 req/min per IP</strong>.</p>
+      <p>Rate-limited per IP (configurable via <code>TE_DASHBOARD_AUTH_RATE_LIMIT_RPM</code>, default 5 req/min).</p>
       <div class="code-block mb-3">
         <pre><span class="sh-comment">// Request</span>
 { <span class="sh-key">"email"</span>: <span class="sh-val">"user@example.com"</span>, <span class="sh-key">"password"</span>: <span class="sh-val">"..."</span>, <span class="sh-key">"name"</span>: <span class="sh-val">"Alice"</span> }
@@ -477,7 +520,7 @@
       </div>
 
       <h3>POST /auth/login</h3>
-      <p>Rate-limited to <strong>5 req/min per IP</strong>. Returns a JWT and sets a <code>session</code> cookie.</p>
+      <p>Rate-limited per IP. Returns a JWT and sets a <code>session</code> cookie. When refresh tokens are enabled, also sets a <code>tunneledge_refresh</code> cookie.</p>
       <div class="code-block mb-3">
         <pre><span class="sh-comment">// Request</span>
 { <span class="sh-key">"email"</span>: <span class="sh-val">"user@example.com"</span>, <span class="sh-key">"password"</span>: <span class="sh-val">"..."</span> }
@@ -486,8 +529,11 @@
 { <span class="sh-key">"token"</span>: <span class="sh-val">"eyJ..."</span>, <span class="sh-key">"expires_at"</span>: <span class="sh-val">1747000000</span> }</pre>
       </div>
 
-      <h3>POST /auth/logout</h3>
-      <p>Clears the session cookie. No body required.</p>
+      <h3>POST /auth/refresh <span class="text-xs text-brand-400 ml-1">Phase 3</span></h3>
+      <p>Exchange a <code>tunneledge_refresh</code> cookie for a new access JWT. See <a href="#api-auth-refresh">Token Refresh</a> section.</p>
+
+      <h3>POST /auth/logout <span class="text-xs text-brand-400 ml-1">🔒</span></h3>
+      <p>Clears the session and refresh cookies. Revokes the JWT <code>jti</code> and the refresh token (Phase 3). No body required.</p>
 
       <h3>POST /auth/resend-verification</h3>
       <p>Body: <code>{"email": "..."}</code>. Always returns 200 (no enumeration).</p>
@@ -563,6 +609,124 @@
   <span class="sh-key">"created_at"</span>:  <span class="sh-val">1747000000</span>,
   <span class="sh-key">"last_heartbeat"</span>: <span class="sh-val">1747000120</span> }</pre>
       </div>
+
+      <!-- ── API: Token Refresh ─────────────────────────────────────── -->
+      <h2 id="api-auth-refresh">REST API — Token Refresh <span class="text-xs text-brand-400 ml-1">Phase 3</span></h2>
+      <p>Requires <code>TE_DASHBOARD_REFRESH_TOKEN_ENABLED=true</code>. The refresh token is issued at login and stored in a <code>tunneledge_refresh</code> HTTP-only cookie.</p>
+
+      <h3>POST /auth/refresh</h3>
+      <p>Exchanges a valid refresh token (from cookie) for a new short-lived access JWT. No request body needed.</p>
+      <div class="code-block mb-6">
+        <pre><span class="sh-comment">// 200 OK</span>
+{ <span class="sh-key">"token"</span>: <span class="sh-val">"eyJ..."</span>, <span class="sh-key">"expires_at"</span>: <span class="sh-val">1747003600</span> }</pre>
+      </div>
+
+      <!-- ── API: Tunnel ACLs ───────────────────────────────────────── -->
+      <h2 id="api-acls">REST API — Tunnel ACLs <span class="text-xs text-brand-400 ml-1">Phase 3 🔒</span></h2>
+      <p>Tunnel ACLs are per-agent CIDR rules. The gateway evaluates them on every inbound public connection before opening a QUIC stream to the agent. Rules are <strong>deny-first</strong>: the first matching rule wins. An empty list allows all IPs.</p>
+
+      <div class="glass rounded-xl overflow-hidden mb-4">
+        <table class="doc-table">
+          <thead><tr><th>Method + Path</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>GET /agents/:id/acls</td><td>List ACL rules for the agent</td></tr>
+            <tr><td>POST /agents/:id/acls</td><td>Create an ACL rule. Body: <code>{"cidr":"10.0.0.0/8","acl_type":"deny"}</code></td></tr>
+            <tr><td>DELETE /agents/:id/acls/:aclID</td><td>Delete an ACL rule</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>acl_type</code> is either <code>"allow"</code> or <code>"deny"</code>. Rules are evaluated in insertion order. ACL management is only available when the PostgreSQL driver is configured.</p>
+      <div class="code-block mb-6">
+        <pre><span class="sh-comment">// POST /api/v1/agents/1/acls</span>
+{ <span class="sh-key">"cidr"</span>: <span class="sh-val">"192.168.0.0/16"</span>, <span class="sh-key">"acl_type"</span>: <span class="sh-val">"allow"</span> }
+
+<span class="sh-comment">// 201 Created</span>
+{ <span class="sh-key">"id"</span>: <span class="sh-val">1</span>, <span class="sh-key">"tunnel_id"</span>: <span class="sh-val">"t-my-server"</span>, <span class="sh-key">"cidr"</span>: <span class="sh-val">"192.168.0.0/16"</span>, <span class="sh-key">"acl_type"</span>: <span class="sh-val">"allow"</span>, <span class="sh-key">"created_at"</span>: <span class="sh-val">"..."</span> }</pre>
+      </div>
+
+      <!-- ── API: Audit Log ─────────────────────────────────────────── -->
+      <h2 id="api-audit">REST API — Audit Log <span class="text-xs text-brand-400 ml-1">Phase 3 🔒</span></h2>
+      <p>All auth, token, tunnel lifecycle, and rate-limit events are recorded asynchronously to the <code>audit_events</code> table.</p>
+
+      <h3>GET /audit</h3>
+      <p>Query parameters: <code>actor_id</code>, <code>event_type</code>, <code>since</code> (RFC3339), <code>until</code> (RFC3339). Returns up to 100 events.</p>
+      <div class="code-block mb-4">
+        <pre><span class="sh-cmd">GET</span> /api/v1/audit?event_type=auth.failure&amp;since=2026-05-01T00:00:00Z</pre>
+      </div>
+      <p>Event types: <code>auth.success</code>, <code>auth.failure</code>, <code>auth.lockout</code>, <code>token.created</code>, <code>token.rotated</code>, <code>token.revoked</code>, <code>tunnel.created</code>, <code>tunnel.deleted</code>, <code>ownership.changed</code>, <code>admin.action</code>, <code>rate_limit.hit</code>.</p>
+      <div class="code-block mb-10">
+        <pre><span class="sh-comment">// 200 OK — array of events</span>
+[{ <span class="sh-key">"id"</span>: <span class="sh-val">42</span>, <span class="sh-key">"event_type"</span>: <span class="sh-val">"auth.failure"</span>, <span class="sh-key">"actor_id"</span>: <span class="sh-val">"user@example.com"</span>,
+   <span class="sh-key">"ip_address"</span>: <span class="sh-val">"1.2.3.4"</span>, <span class="sh-key">"metadata"</span>: { <span class="sh-key">"reason"</span>: <span class="sh-val">"invalid password"</span> },
+   <span class="sh-key">"created_at"</span>: <span class="sh-val">"2026-05-18T10:22:01Z"</span> }]</pre>
+      </div>
+
+      <!-- ── Security Deep-Dive ─────────────────────────────────────── -->
+      <h2 id="security">Security Overview <span class="text-xs text-brand-400 ml-1">Phase 3</span></h2>
+      <p>Phase 3 adds a comprehensive security layer across all services. All features are off by default and activated via config/env vars.</p>
+      <ul>
+        <li><strong>mTLS</strong> — mutual certificate authentication between agents and gateways, and between gateways and the registry</li>
+        <li><strong>Token security</strong> — agent token expiry, per-agent auth lockout, bcrypt hashing with HMAC pre-filter</li>
+        <li><strong>JWT hardening</strong> — <code>jti</code> + <code>aud</code> claims, refresh tokens, revocation table checked on every request</li>
+        <li><strong>Tunnel ACLs</strong> — per-tunnel CIDR deny/allow rules enforced at the public TCP handler</li>
+        <li><strong>Rate limiting</strong> — per-IP token bucket on gateway auth, registry gRPC, and dashboard login/register</li>
+        <li><strong>Quotas</strong> — per-agent tunnel count limit, per-tunnel concurrent stream limit, optional bandwidth limiter</li>
+        <li><strong>Audit log</strong> — async event log for auth, token, and tunnel lifecycle events; queryable via REST API</li>
+      </ul>
+
+      <h2 id="mtls">mTLS Setup</h2>
+      <p>Generate all required certificates with the bundled script:</p>
+      <div class="code-block mb-4">
+        <pre><span class="sh-cmd">make</span> certs
+<span class="sh-comment"># Generates: certs/ca.{crt,key}, certs/gateway.{crt,key},</span>
+<span class="sh-comment">#            certs/registry.{crt,key}, certs/agent.{crt,key},</span>
+<span class="sh-comment">#            certs/gateway-registry-client.{crt,key}</span></pre>
+      </div>
+      <p>Enable mTLS on the gateway by setting:</p>
+      <div class="code-block mb-4">
+        <pre><span class="sh-key">TE_GATEWAY_MTLS_ENABLED</span>=<span class="sh-val">true</span>
+<span class="sh-key">TE_GATEWAY_TLS_CERT_FILE</span>=<span class="sh-val">certs/gateway.crt</span>
+<span class="sh-key">TE_GATEWAY_TLS_KEY_FILE</span>=<span class="sh-val">certs/gateway.key</span>
+<span class="sh-key">TE_GATEWAY_CLIENT_CA_FILE</span>=<span class="sh-val">certs/ca.crt</span></pre>
+      </div>
+      <p>Enable mTLS on the agent:</p>
+      <div class="code-block mb-6">
+        <pre><span class="sh-key">TE_AGENT_MTLS_ENABLED</span>=<span class="sh-val">true</span>
+<span class="sh-key">TE_AGENT_CLIENT_CERT_FILE</span>=<span class="sh-val">certs/agent.crt</span>
+<span class="sh-key">TE_AGENT_CLIENT_KEY_FILE</span>=<span class="sh-val">certs/agent.key</span>
+<span class="sh-key">TE_AGENT_TLS_CA_FILE</span>=<span class="sh-val">certs/ca.crt</span></pre>
+      </div>
+
+      <h2 id="token-security">Token Security</h2>
+      <p>Configure agent auth lockout and token expiry behavior:</p>
+      <div class="code-block mb-6">
+        <pre><span class="sh-key">TE_DASHBOARD_MAX_FAILED_LOGINS</span>=<span class="sh-val">10</span>       <span class="sh-comment"># lock after 10 consecutive failures</span>
+<span class="sh-key">TE_DASHBOARD_LOCKOUT_DURATION</span>=<span class="sh-val">15m</span>       <span class="sh-comment"># locked for 15 minutes</span>
+<span class="sh-key">TE_DASHBOARD_REFRESH_TOKEN_ENABLED</span>=<span class="sh-val">true</span>
+<span class="sh-key">TE_DASHBOARD_REFRESH_TOKEN_TTL</span>=<span class="sh-val">168h</span>     <span class="sh-comment"># 7-day refresh window</span></pre>
+      </div>
+
+      <h2 id="rate-limiting">Rate Limiting</h2>
+      <p>TunnelEdge uses a per-IP token-bucket limiter. All thresholds are configurable:</p>
+      <div class="glass rounded-xl overflow-hidden mb-6">
+        <table class="doc-table">
+          <thead><tr><th>Surface</th><th>Env var</th><th>Default</th></tr></thead>
+          <tbody>
+            <tr><td>Dashboard login/register</td><td>TE_DASHBOARD_AUTH_RATE_LIMIT_RPM</td><td>5 rpm</td></tr>
+            <tr><td>Gateway agent auth</td><td>TE_GATEWAY_AUTH_RATE_LIMIT_RPM</td><td>disabled</td></tr>
+            <tr><td>Registry gRPC</td><td>TE_REGISTRY_AUTH_RATE_LIMIT_RPM</td><td>disabled</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="acls">Tunnel ACLs</h2>
+      <p>Tunnel ACLs are CIDR rules evaluated at the public TCP handler before a QUIC stream is opened to the agent. Rules are deny-first and evaluated in the order they were created. An empty list means all IPs are allowed.</p>
+      <div class="callout">
+        <p>Example: allow only your office subnet and deny everything else. Create an <code>allow 10.0.0.0/8</code> rule. Any IP that doesn't match is denied (implicit deny-all when at least one allow rule exists).</p>
+      </div>
+
+      <h2 id="audit-log">Audit Log</h2>
+      <p>All security-relevant events are written asynchronously to the <code>audit_events</code> PostgreSQL table. The audit service is fire-and-forget — audit failures never block the request path. Query events via the REST API or directly in your database for SIEM integration.</p>
 
       <!-- Footer -->
       <div class="border-t border-white/5 pt-8 flex items-center justify-between text-sm text-slate-600">

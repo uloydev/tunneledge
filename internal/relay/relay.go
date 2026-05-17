@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -205,6 +206,58 @@ func BidirectionalWithIdleTimeout(ctx context.Context, a, b io.ReadWriteCloser, 
 		enqueueTimeout: defaultRelayEnqueueWait,
 		writeTimeout:   defaultRelayWriteTimeout,
 	})
+}
+
+// bandwidthReader wraps an io.Reader, throttling reads using a token bucket
+// rate limiter. bandwidthBps is the maximum bytes-per-second; 0 disables throttling.
+type bandwidthReader struct {
+	ctx     context.Context
+	r       io.Reader
+	limiter *rate.Limiter
+}
+
+func newBandwidthReader(ctx context.Context, r io.Reader, bandwidthBps int64) io.Reader {
+	if bandwidthBps <= 0 {
+		return r
+	}
+	// Allow bursts of up to 32 KiB.
+	burst := int(min64(bandwidthBps, 32*1024))
+	return &bandwidthReader{ctx: ctx, r: r, limiter: rate.NewLimiter(rate.Limit(bandwidthBps), burst)}
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (br *bandwidthReader) Read(p []byte) (int, error) {
+	n, err := br.r.Read(p)
+	if n > 0 {
+		if waitErr := br.limiter.WaitN(br.ctx, n); waitErr != nil {
+			return n, waitErr
+		}
+	}
+	return n, err
+}
+
+// bandwidthLimitedRWC wraps a ReadWriteCloser, throttling reads.
+type bandwidthLimitedRWC struct {
+	io.ReadWriteCloser
+	reader io.Reader
+}
+
+func (b *bandwidthLimitedRWC) Read(p []byte) (int, error) { return b.reader.Read(p) }
+
+// BidirectionalWithBandwidthLimit relays data between a and b with optional
+// per-direction bandwidth limiting. bandwidthBps <= 0 disables limiting.
+func BidirectionalWithBandwidthLimit(ctx context.Context, a, b io.ReadWriteCloser, idleTimeout time.Duration, bandwidthBps int64, onBytes func(direction string, n int)) (*RelayResult, error) {
+	if bandwidthBps > 0 {
+		a = &bandwidthLimitedRWC{ReadWriteCloser: a, reader: newBandwidthReader(ctx, a, bandwidthBps)}
+		b = &bandwidthLimitedRWC{ReadWriteCloser: b, reader: newBandwidthReader(ctx, b, bandwidthBps)}
+	}
+	return BidirectionalWithIdleTimeout(ctx, a, b, idleTimeout, onBytes)
 }
 
 func bidirectionalWithOptions(ctx context.Context, a, b io.ReadWriteCloser, idleTimeout time.Duration, onBytes func(direction string, n int), opts relayOptions) (*RelayResult, error) {

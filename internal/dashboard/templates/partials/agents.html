@@ -89,9 +89,62 @@
     </div>
   </div>
 
+  <!-- IP ACL Management Modal -->
+  <div x-show="showACL" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="showACL = false">
+    <div class="absolute inset-0 bg-black/60" @click="showACL = false" x-transition.opacity></div>
+    <div class="relative bg-surface-800 border border-surface-700 rounded-xl p-6 w-full max-w-lg shadow-2xl" x-transition>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-lg font-semibold text-white">IP Access Rules</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Agent: <span class="text-brand-400 font-mono" x-text="aclAgent?.agent_id"></span></p>
+        </div>
+        <button @click="showACL = false" class="text-slate-500 hover:text-white transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="mb-4 space-y-2 max-h-48 overflow-y-auto">
+        <template x-if="aclRules.length === 0">
+          <p class="text-xs text-slate-500 italic text-center py-4">No rules — all IPs allowed</p>
+        </template>
+        <template x-for="rule in aclRules" :key="rule.id">
+          <div class="flex items-center justify-between bg-surface-900 rounded-lg px-3 py-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="text-xs font-bold px-1.5 py-0.5 rounded shrink-0"
+                    :class="rule.acl_type === 'allow' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'"
+                    x-text="rule.acl_type.toUpperCase()"></span>
+              <span class="text-sm font-mono text-slate-200 truncate" x-text="rule.cidr"></span>
+            </div>
+            <button @click="deleteACLRule(rule)" class="text-slate-600 hover:text-red-400 transition ml-2 shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </template>
+      </div>
+      <form @submit.prevent="addACLRule" class="flex gap-2 items-end border-t border-surface-700 pt-4">
+        <div class="flex-1">
+          <label class="block text-xs font-medium text-slate-400 mb-1">CIDR</label>
+          <input type="text" x-model="newACL.cidr" required placeholder="192.168.0.0/24"
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+        </div>
+        <div class="w-28">
+          <label class="block text-xs font-medium text-slate-400 mb-1">Type</label>
+          <select x-model="newACL.acl_type"
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option value="allow">Allow</option>
+            <option value="deny">Deny</option>
+          </select>
+        </div>
+        <button type="submit" :disabled="addingACL"
+          class="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition shrink-0">
+          <span x-text="addingACL ? '…' : 'Add'"></span>
+        </button>
+      </form>
+      <p class="text-xs text-slate-500 mt-3">Rules evaluated deny-first, in order. Empty list = allow all.</p>
+    </div>
+  </div>
+
   <!-- Add Tunnel Modal -->
-  <div x-show="showTunnel" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="showTunnel = false">
-    <div class="absolute inset-0 bg-black/60" @click="showTunnel = false" x-transition.opacity></div>
+  <div x-show="showTunnel" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="showTunnel = false">    <div class="absolute inset-0 bg-black/60" @click="showTunnel = false" x-transition.opacity></div>
     <div class="relative bg-surface-800 border border-surface-700 rounded-xl p-6 w-full max-w-md shadow-2xl" x-transition>
       <h3 class="text-lg font-semibold text-white mb-4">Add Tunnel Configuration</h3>
       <form @submit.prevent="createTunnel" class="space-y-4">
@@ -159,11 +212,50 @@
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
               Rotate Token
             </button>
+            <button @click="showACLModal(a)" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 text-xs font-medium rounded-lg transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+              IP ACLs
+            </button>
             <button @click="promptDeleteAgent(a)" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-medium rounded-lg transition">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
               Delete
             </button>
           </div>
+
+          <!-- Security status (Phase 3) -->
+          <template x-if="a.locked_until || a.failed_auth_count > 0 || a.token_expires_at || a.last_used_at">
+            <div class="bg-surface-900/60 border border-surface-700 rounded-lg px-4 py-3 space-y-1.5">
+              <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Security Status</p>
+              <template x-if="a.locked_until">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
+                  <span class="text-red-400 font-medium">Locked</span>
+                  <span class="text-slate-500">until</span>
+                  <span class="text-slate-300 font-mono" x-text="new Date(a.locked_until).toLocaleString()"></span>
+                </div>
+              </template>
+              <template x-if="a.failed_auth_count > 0">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+                  <span class="text-amber-400 font-medium" x-text="a.failed_auth_count + ' failed auth attempt' + (a.failed_auth_count !== 1 ? 's' : '')"></span>
+                </div>
+              </template>
+              <template x-if="a.token_expires_at">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                  <span class="text-slate-400">Token expires</span>
+                  <span class="text-slate-300 font-mono" x-text="new Date(a.token_expires_at).toLocaleDateString()"></span>
+                </div>
+              </template>
+              <template x-if="a.last_used_at">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                  <span class="text-slate-400">Last used</span>
+                  <span class="text-slate-300 font-mono" x-text="new Date(a.last_used_at).toLocaleString()"></span>
+                </div>
+              </template>
+            </div>
+          </template>
 
           <!-- Tunnels -->
           <div>
@@ -204,6 +296,9 @@ function agentsPage() {
     showTunnel: false, creatingTunnel: false,
     tunnelAgent: null,
     newTunnel: { label: '', local_addr: '' },
+    // ACL state
+    showACL: false, aclAgent: null, aclRules: [],
+    newACL: { cidr: '', acl_type: 'allow' }, addingACL: false,
     confirm: { show: false, title: '', message: '', okLabel: '', danger: false, onOk: () => {} },
 
     askConfirm({ title, message, okLabel, danger, onOk }) {
@@ -336,6 +431,44 @@ function agentsPage() {
           notify(`Tunnel "${tunnel.label}" removed`, 'success');
         } else { notify('Failed to delete tunnel', 'error'); }
       } catch { notify('Failed to delete tunnel', 'error'); }
+    },
+
+    async showACLModal(agent) {
+      this.aclAgent = agent;
+      this.aclRules = [];
+      this.newACL = { cidr: '', acl_type: 'allow' };
+      this.showACL = true;
+      try {
+        const res = await fetch(`/api/v1/agents/${agent.id}/acls`);
+        if (res.ok) this.aclRules = await res.json();
+        else if (res.status === 404) this.aclRules = []; // ACLs not enabled
+      } catch {}
+    },
+
+    async addACLRule() {
+      this.addingACL = true;
+      try {
+        const res = await fetch(`/api/v1/agents/${this.aclAgent.id}/acls`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newACL)
+        });
+        const data = await res.json();
+        if (!res.ok) { notify(data.error || 'Failed to add rule', 'error'); return; }
+        this.aclRules = [...this.aclRules, data];
+        this.newACL = { cidr: '', acl_type: 'allow' };
+        notify('ACL rule added', 'success');
+      } catch { notify('Failed to add rule', 'error'); }
+      finally { this.addingACL = false; }
+    },
+
+    async deleteACLRule(rule) {
+      try {
+        const res = await fetch(`/api/v1/agents/${this.aclAgent.id}/acls/${rule.id}`, { method: 'DELETE' });
+        if (res.ok || res.status === 204) {
+          this.aclRules = this.aclRules.filter(r => r.id !== rule.id);
+          notify('ACL rule removed', 'success');
+        } else { notify('Failed to remove rule', 'error'); }
+      } catch { notify('Failed to remove rule', 'error'); }
     },
 
     copyToken() {

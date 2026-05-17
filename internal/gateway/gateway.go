@@ -28,26 +28,33 @@ type activeTunnel struct {
 }
 
 type Gateway struct {
-	mu                   sync.RWMutex
-	tunnels              map[string]*activeTunnel
-	router               *TunnelRouter
-	distRouter           *DistributedRouter
-	streamManager        *stream.Manager
-	authenticator        auth.Authenticator
-	registryClient       domain.RegistryClient
-	metrics              *metrics.Metrics
-	relayID              string
-	advertiseAddr        string
-	quicListenAddr       string
-	publicListenAddr     string
-	baseDomain           string
-	tlsCertFile          string
-	tlsKeyFile           string
+	mu               sync.RWMutex
+	tunnels          map[string]*activeTunnel
+	router           *TunnelRouter
+	distRouter       *DistributedRouter
+	streamManager    *stream.Manager
+	authenticator    auth.Authenticator
+	registryClient   domain.RegistryClient
+	metrics          *metrics.Metrics
+	relayID          string
+	advertiseAddr    string
+	quicListenAddr   string
+	publicListenAddr string
+	baseDomain       string
+	tlsCertFile      string
+	tlsKeyFile       string
+	// mTLS for agent QUIC connections
+	mtlsEnabled          bool
+	clientCAFile         string
 	leaseTTL             time.Duration
 	healthReportInterval time.Duration
 	maxStreams           int64
+	maxTunnelsPerAgent   int
+	maxStreamsPerTunnel  int64
+	authRateLimiter      *auth.IPRateLimiter
 	shutdownTimeout      time.Duration
 	streamIdleTimeout    time.Duration
+	tunnelACLs           domain.TunnelACLRepository
 }
 
 type Options struct {
@@ -66,6 +73,15 @@ type Options struct {
 	AdvertiseAddr        string
 	LeaseTTL             time.Duration
 	HealthReportInterval time.Duration
+	// Phase 3: mTLS
+	MTLSEnabled  bool
+	ClientCAFile string
+	// Phase 3: abuse prevention
+	AuthRateLimitRPM    int
+	MaxTunnelsPerAgent  int
+	MaxStreamsPerTunnel int64
+	// Phase 3: tunnel ACL enforcement
+	TunnelACLs domain.TunnelACLRepository
 }
 
 func NewGateway(opts Options) (*Gateway, error) {
@@ -77,6 +93,12 @@ func NewGateway(opts Options) (*Gateway, error) {
 	}
 
 	locRouter := NewTunnelRouter(opts.BaseDomain)
+
+	var authRL *auth.IPRateLimiter
+	if opts.AuthRateLimitRPM > 0 {
+		authRL = auth.NewIPRateLimiter(opts.AuthRateLimitRPM, opts.AuthRateLimitRPM)
+	}
+
 	return &Gateway{
 		tunnels:              make(map[string]*activeTunnel),
 		router:               locRouter,
@@ -92,11 +114,17 @@ func NewGateway(opts Options) (*Gateway, error) {
 		baseDomain:           opts.BaseDomain,
 		tlsCertFile:          opts.TLSCertFile,
 		tlsKeyFile:           opts.TLSKeyFile,
+		mtlsEnabled:          opts.MTLSEnabled,
+		clientCAFile:         opts.ClientCAFile,
 		leaseTTL:             gatewayLeaseTTL(opts.LeaseTTL),
 		healthReportInterval: gatewayHealthReportInterval(opts.HealthReportInterval),
 		maxStreams:           opts.MaxStreams,
+		maxTunnelsPerAgent:   opts.MaxTunnelsPerAgent,
+		maxStreamsPerTunnel:  opts.MaxStreamsPerTunnel,
+		authRateLimiter:      authRL,
 		shutdownTimeout:      gatewayShutdownTimeout(opts.ShutdownTimeout),
 		streamIdleTimeout:    streamIdleTimeout(opts.StreamIdleTimeout),
+		tunnelACLs:           opts.TunnelACLs,
 	}, nil
 }
 
@@ -372,6 +400,9 @@ func (g *Gateway) closeAll() {
 }
 
 func (g *Gateway) buildQUICTLSConfig() (*tls.Config, error) {
+	if g.mtlsEnabled && g.tlsCertFile != "" && g.tlsKeyFile != "" && g.clientCAFile != "" {
+		return transport.LoadMTLSServerConfig(g.tlsCertFile, g.tlsKeyFile, g.clientCAFile)
+	}
 	if g.tlsCertFile != "" && g.tlsKeyFile != "" {
 		return transport.LoadQUICTLSConfig(g.tlsCertFile, g.tlsKeyFile)
 	}

@@ -1,0 +1,191 @@
+<!-- Audit Log partial loaded via HTMX -->
+<div class="space-y-6" x-data="auditPage()" x-init="load()">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Audit Log</h1>
+      <p class="text-slate-400 text-sm mt-1">Security events — auth, token, and tunnel lifecycle</p>
+    </div>
+    <button @click="load()" class="inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-white bg-surface-800 border border-surface-700 rounded-lg transition">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+      Refresh
+    </button>
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-surface-800 border border-surface-700 rounded-xl px-5 py-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">Actor / User ID</label>
+        <input type="text" x-model="filter.actor_id" placeholder="user@example.com"
+          class="w-full rounded-lg bg-surface-900 border border-surface-700 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">Event Type</label>
+        <select x-model="filter.event_type"
+          class="w-full rounded-lg bg-surface-900 border border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option value="">All events</option>
+          <option value="auth.success">auth.success</option>
+          <option value="auth.failure">auth.failure</option>
+          <option value="auth.lockout">auth.lockout</option>
+          <option value="token.created">token.created</option>
+          <option value="token.rotated">token.rotated</option>
+          <option value="token.revoked">token.revoked</option>
+          <option value="tunnel.created">tunnel.created</option>
+          <option value="tunnel.deleted">tunnel.deleted</option>
+          <option value="rate_limit.hit">rate_limit.hit</option>
+          <option value="admin.action">admin.action</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">Since</label>
+        <input type="datetime-local" x-model="filter.since"
+          class="w-full rounded-lg bg-surface-900 border border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">Until</label>
+        <input type="datetime-local" x-model="filter.until"
+          class="w-full rounded-lg bg-surface-900 border border-surface-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 mt-4">
+      <button @click="resetFilters()" class="px-3 py-2 text-sm text-slate-400 hover:text-white transition">Clear</button>
+      <button @click="load()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition">Apply</button>
+    </div>
+  </div>
+
+  <!-- Events table -->
+  <div class="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
+    <!-- Not available notice -->
+    <template x-if="unavailable">
+      <div class="px-5 py-16 text-center">
+        <svg class="w-10 h-10 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+        <p class="text-slate-400 text-sm">Audit log is not enabled</p>
+        <p class="text-slate-500 text-xs mt-1">Set <code class="text-brand-400">TE_DASHBOARD_AUDIT_ENABLED=true</code> and use the PostgreSQL driver.</p>
+      </div>
+    </template>
+
+    <!-- Empty state -->
+    <template x-if="!unavailable && !loading && events.length === 0">
+      <div class="px-5 py-16 text-center">
+        <svg class="w-12 h-12 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+        <p class="text-slate-400 text-sm">No audit events match your filters</p>
+      </div>
+    </template>
+
+    <!-- Loading skeleton -->
+    <template x-if="loading">
+      <div class="divide-y divide-surface-700">
+        <template x-for="i in 5" :key="i">
+          <div class="px-5 py-3.5 flex items-center gap-4 animate-pulse">
+            <div class="w-24 h-4 bg-surface-700 rounded"></div>
+            <div class="w-32 h-4 bg-surface-700 rounded"></div>
+            <div class="flex-1 h-4 bg-surface-700 rounded"></div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- Events -->
+    <template x-if="!loading && !unavailable && events.length > 0">
+      <div>
+        <div class="hidden sm:grid grid-cols-12 gap-3 px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-surface-700">
+          <span class="col-span-2">Time</span>
+          <span class="col-span-3">Event</span>
+          <span class="col-span-3">Actor</span>
+          <span class="col-span-2">IP</span>
+          <span class="col-span-2">Details</span>
+        </div>
+        <div class="divide-y divide-surface-700">
+          <template x-for="e in events" :key="e.id">
+            <div class="px-5 py-3.5 hover:bg-surface-700/30 transition">
+              <!-- Desktop layout -->
+              <div class="hidden sm:grid grid-cols-12 gap-3 items-start text-sm">
+                <span class="col-span-2 text-xs font-mono text-slate-500" x-text="fmtTime(e.created_at)"></span>
+                <span class="col-span-3">
+                  <span class="inline-block text-xs font-medium px-2 py-0.5 rounded-full"
+                        :class="eventBadgeClass(e.event_type)"
+                        x-text="e.event_type"></span>
+                </span>
+                <span class="col-span-3 text-slate-300 truncate font-mono text-xs" x-text="e.actor_id || '—'"></span>
+                <span class="col-span-2 text-slate-400 font-mono text-xs" x-text="e.ip_address || '—'"></span>
+                <span class="col-span-2 text-slate-500 text-xs truncate" x-text="metaSummary(e.metadata)"></span>
+              </div>
+              <!-- Mobile layout -->
+              <div class="sm:hidden space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="inline-block text-xs font-medium px-2 py-0.5 rounded-full"
+                        :class="eventBadgeClass(e.event_type)"
+                        x-text="e.event_type"></span>
+                  <span class="text-xs font-mono text-slate-500" x-text="fmtTime(e.created_at)"></span>
+                </div>
+                <p class="text-xs text-slate-300 font-mono" x-text="(e.actor_id || '—') + (e.ip_address ? ' · ' + e.ip_address : '')"></p>
+                <template x-if="e.metadata && Object.keys(e.metadata).length > 0">
+                  <p class="text-xs text-slate-500" x-text="metaSummary(e.metadata)"></p>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div class="px-5 py-3 text-xs text-slate-500 border-t border-surface-700">
+          Showing up to 100 most recent events matching your filters.
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script>
+function auditPage() {
+  return {
+    events: [], loading: false, unavailable: false,
+    filter: { actor_id: '', event_type: '', since: '', until: '' },
+
+    async load() {
+      this.loading = true;
+      this.unavailable = false;
+      try {
+        const params = new URLSearchParams();
+        if (this.filter.actor_id)  params.set('actor_id',   this.filter.actor_id);
+        if (this.filter.event_type) params.set('event_type', this.filter.event_type);
+        if (this.filter.since)     params.set('since',       new Date(this.filter.since).toISOString());
+        if (this.filter.until)     params.set('until',       new Date(this.filter.until).toISOString());
+
+        const res = await fetch('/api/v1/audit?' + params.toString());
+        if (res.status === 404) { this.unavailable = true; return; }
+        if (res.ok) this.events = await res.json();
+        else this.events = [];
+      } catch { this.events = []; }
+      finally { this.loading = false; }
+    },
+
+    resetFilters() {
+      this.filter = { actor_id: '', event_type: '', since: '', until: '' };
+      this.load();
+    },
+
+    fmtTime(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    },
+
+    eventBadgeClass(type) {
+      if (!type) return 'bg-slate-700/50 text-slate-400';
+      if (type.startsWith('auth.failure') || type.startsWith('auth.lockout')) return 'bg-red-500/10 text-red-400';
+      if (type.startsWith('auth.success')) return 'bg-emerald-500/10 text-emerald-400';
+      if (type.startsWith('rate_limit'))   return 'bg-orange-500/10 text-orange-400';
+      if (type.startsWith('token'))        return 'bg-amber-500/10 text-amber-400';
+      if (type.startsWith('tunnel'))       return 'bg-brand-500/10 text-brand-400';
+      if (type.startsWith('admin'))        return 'bg-violet-500/10 text-violet-400';
+      return 'bg-slate-700/50 text-slate-400';
+    },
+
+    metaSummary(meta) {
+      if (!meta || typeof meta !== 'object') return '';
+      const keys = Object.keys(meta);
+      if (keys.length === 0) return '';
+      return keys.slice(0, 2).map(k => k + ': ' + meta[k]).join(', ');
+    }
+  }
+}
+</script>

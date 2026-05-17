@@ -23,3 +23,8 @@ agent:
   quic_timeout: 30s
   stream_idle_timeout: 30s
   tls_insecure: true
+  # Phase 3: mTLS — present a client certificate to the gateway
+  # mtls_enabled: false
+  # client_cert_file: /path/to/certs/agent.crt
+  # client_key_file: /path/to/certs/agent.key
+  # tls_ca_file: /path/to/certs/ca.crt

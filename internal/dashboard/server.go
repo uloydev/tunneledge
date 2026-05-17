@@ -28,16 +28,41 @@ type ServerOptions struct {
 	Sessions      domain.SessionRepository
 	Verifications domain.EmailVerificationRepository
 	EmailService  *email.Service
+	// Phase 3: token security
+	RevokedJTIs         domain.RevokedJTIRepository   // optional
+	RefreshTokens       domain.RefreshTokenRepository // optional
+	RefreshTokenEnabled bool
+	RefreshTokenTTL     time.Duration
+	AuthRateLimitRPM    int
+	TunnelACLs          domain.TunnelACLRepository // optional
+	// Phase 3: audit log
+	AuditRepo domain.AuditRepository // optional
 }
 
 func NewServer(opts ServerOptions) *Server {
 	// ── Services ──────────────────────────────────────────────
 	authSvc := NewAuthService(opts.Users, opts.Verifications, opts.EmailService, opts.BaseURL, opts.JWTCfg)
+	if opts.RefreshTokenEnabled && opts.RefreshTokens != nil {
+		ttl := opts.RefreshTokenTTL
+		if ttl <= 0 {
+			ttl = 7 * 24 * time.Hour
+		}
+		authSvc.WithRefreshTokens(opts.RefreshTokens, ttl)
+	}
 	agentSvc := NewAgentService(opts.Agents, opts.Tokens, opts.Tunnels)
 	tunnelSvc := NewTunnelService(opts.Tunnels, opts.Agents)
 
 	// ── Handlers ──────────────────────────────────────────────
 	authHandler := NewAuthHandler(authSvc)
+	if opts.RevokedJTIs != nil {
+		authHandler.WithRevocation(opts.RevokedJTIs)
+	}
+	if opts.RefreshTokens != nil {
+		authHandler.WithRefreshRepo(opts.RefreshTokens)
+	}
+	if opts.AuditRepo != nil {
+		authHandler.WithAuditService(NewAuditService(opts.AuditRepo))
+	}
 	agentHandler := NewAgentHandler(agentSvc)
 	tunnelHandler := NewTunnelHandler(tunnelSvc)
 	statusHandler := NewStatusHandler(opts.Sessions, opts.Agents)
@@ -57,6 +82,7 @@ func NewServer(opts ServerOptions) *Server {
 	mux.HandleFunc("GET /partials/overview", requireCookie(opts.JWTCfg.Secret, pageHandler.Partial("overview")))
 	mux.HandleFunc("GET /partials/agents", requireCookie(opts.JWTCfg.Secret, pageHandler.Partial("agents")))
 	mux.HandleFunc("GET /partials/sessions", requireCookie(opts.JWTCfg.Secret, pageHandler.Partial("sessions")))
+	mux.HandleFunc("GET /partials/audit", requireCookie(opts.JWTCfg.Secret, pageHandler.Partial("audit")))
 
 	// Root → landing page
 	mux.HandleFunc("GET /{$}", pageHandler.LandingPage)
@@ -64,13 +90,18 @@ func NewServer(opts ServerOptions) *Server {
 
 	// ── API routes ────────────────────────────────────────────
 	// Public (no auth)
-	mux.Handle("POST /api/v1/auth/register", RateLimitMiddleware(http.HandlerFunc(authHandler.Register)))
-	mux.Handle("POST /api/v1/auth/login", RateLimitMiddleware(http.HandlerFunc(authHandler.Login)))
-	mux.HandleFunc("POST /api/v1/auth/logout", authHandler.Logout)
+	authRL := NewRateLimitMiddleware(opts.AuthRateLimitRPM)
+	mux.Handle("POST /api/v1/auth/register", authRL(http.HandlerFunc(authHandler.Register)))
+	mux.Handle("POST /api/v1/auth/login", authRL(http.HandlerFunc(authHandler.Login)))
+	mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.Refresh)
 	mux.HandleFunc("POST /api/v1/auth/resend-verification", authHandler.ResendVerification)
 
-	authMw := JWTAuthMiddleware(opts.JWTCfg.Secret)
+	authMw := JWTAuthMiddleware(JWTMiddlewareOptions{
+		Secret:      opts.JWTCfg.Secret,
+		RevokedRepo: opts.RevokedJTIs,
+	})
 
+	mux.Handle("POST /api/v1/auth/logout", authMw(http.HandlerFunc(authHandler.Logout)))
 	mux.Handle("GET /api/v1/auth/me", authMw(http.HandlerFunc(authHandler.Me)))
 
 	// Agents
@@ -88,6 +119,14 @@ func NewServer(opts ServerOptions) *Server {
 	mux.Handle("PUT /api/v1/agents/{id}/tunnels/{tid}", authMw(http.HandlerFunc(tunnelHandler.Update)))
 	mux.Handle("DELETE /api/v1/agents/{id}/tunnels/{tid}", authMw(http.HandlerFunc(tunnelHandler.Delete)))
 
+	// Tunnel ACLs (Phase 3) — per-agent IP access control rules
+	if opts.TunnelACLs != nil {
+		aclHandler := NewACLHandler(opts.TunnelACLs, agentSvc)
+		mux.Handle("GET /api/v1/agents/{id}/acls", authMw(http.HandlerFunc(aclHandler.List)))
+		mux.Handle("POST /api/v1/agents/{id}/acls", authMw(http.HandlerFunc(aclHandler.Create)))
+		mux.Handle("DELETE /api/v1/agents/{id}/acls/{aclID}", authMw(http.HandlerFunc(aclHandler.Delete)))
+	}
+
 	// Status
 	mux.Handle("GET /api/v1/agents/{id}/status", authMw(http.HandlerFunc(statusHandler.AgentStatus)))
 	mux.Handle("GET /api/v1/sessions", authMw(http.HandlerFunc(statusHandler.ListSessions)))
@@ -95,6 +134,12 @@ func NewServer(opts ServerOptions) *Server {
 
 	// SSE — real-time event stream
 	mux.Handle("GET /api/v1/events", authMw(http.HandlerFunc(sseHandler.Stream)))
+
+	// Audit log (Phase 3)
+	if opts.AuditRepo != nil {
+		auditHandler := NewAuditHandler(opts.AuditRepo)
+		mux.Handle("GET /api/v1/audit", authMw(http.HandlerFunc(auditHandler.List)))
+	}
 
 	// Health
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {

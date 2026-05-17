@@ -205,11 +205,11 @@
       <!-- Badge -->
       <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-brand-500/30 bg-brand-500/10 text-brand-400 text-xs font-medium mb-8 animate-fade-in" style="animation-delay:.1s">
         <span class="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse"></span>
-        Open-source · Self-hostable · QUIC-powered
+        Open-source · Self-hostable · Enterprise-ready
       </div>
 
       <p class="max-w-xl mx-auto text-sm text-slate-500 mb-6 animate-fade-up" style="animation-delay:.12s">
-        Phase 2 ships full multi-active high availability: registry-backed relay leases, distributed watch-driven cross-gateway routing, agent failover, a public TCP edge, and an optional etcd coordination backend for HA registry deployments.
+        All three phases shipped: Phase 1 stability &amp; hardening, Phase 2 multi-active HA with distributed routing, and Phase 3 enterprise security — mTLS, JWT revocation, token expiry, tunnel ACLs, rate limiting, quotas, and a full audit log.
       </p>
 
       <!-- Headline -->
@@ -275,8 +275,8 @@
       <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 mt-16 text-sm text-slate-500 animate-fade-up" style="animation-delay:.55s">
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> No open firewall ports</div>
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Sub-100ms connection setup</div>
-        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> TLS end-to-end</div>
-        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Backpressure-safe relay</div>
+        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> mTLS mutual authentication</div>
+        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Audit log &amp; IP ACLs</div>
       </div>
     </div>
   </section>
@@ -308,7 +308,7 @@
             <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">Operationally Hardened</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Lifecycle-managed workers, bounded relay queues, hashed agent tokens, and fail-fast startup validation keep slow consumers and bad config from taking the stack down.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Lifecycle-managed workers, bounded relay queues, hashed agent tokens, and fail-fast startup validation. Per-IP rate limiting, per-agent tunnel quotas, per-tunnel stream quotas, and configurable bandwidth limits protect the stack from abuse.</p>
         </div>
 
         <!-- Feature 3 -->
@@ -335,7 +335,7 @@
             <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">Self-Hosted First</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus metrics, a provisioned Grafana dashboard, shutdown limits, registry cleanup windows, and optional OTLP tracing are all exposed as first-class runtime settings. Phase 2 multi-active HA is fully shipped — enable the etcd coordinator with a single env var for a production-grade HA registry.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus, Grafana, OTLP tracing, Phase 2 multi-active HA (etcd coordinator, one env var), and Phase 3 enterprise security (mTLS, refresh tokens, tunnel ACLs, rate limiting, audit log) are all first-class runtime configuration.</p>
         </div>
 
         <!-- Feature 6 -->
@@ -345,6 +345,15 @@
           </div>
           <h3 class="text-base font-bold text-white mb-2">Interactive TUI Agent</h3>
           <p class="text-sm text-slate-400 leading-relaxed">A full terminal UI for your agent — QUIC stream visualizer, bandwidth sparkline, structured log viewer, and live connection state in your terminal.</p>
+        </div>
+
+        <!-- Feature 7 -->
+        <div class="feature-card glass rounded-2xl p-6 reveal" style="transition-delay:.28s">
+          <div class="w-11 h-11 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+          </div>
+          <h3 class="text-base font-bold text-white mb-2">Enterprise Security</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">mTLS mutual auth, JWT revocation with refresh tokens, per-agent token expiry and account lockout, tunnel CIDR ACLs, per-IP rate limiting, and a queryable audit log for compliance.</p>
         </div>
 
       </div>
@@ -479,6 +488,30 @@
               <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
               <td class="px-6 py-3.5 text-center text-slate-500">partial</td>
             </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">mTLS mutual auth</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">enterprise</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+            </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">Token rotation &amp; revocation</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">partial</td>
+              <td class="px-6 py-3.5 text-center text-slate-500">✗</td>
+            </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">Tunnel IP ACLs</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">paid</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+            </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">Audit logging</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">paid</td>
+              <td class="px-6 py-3.5 text-center text-slate-500">partial</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -506,10 +539,11 @@
             </div>
           </div>
           <ul class="space-y-3 text-sm text-slate-300 flex-1 mb-7">
-            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Unlimited agents & tunnels</li>
-            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Docker Compose deploy in &lt;5 min</li>
+            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Unlimited agents &amp; tunnels</li>
+            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Multi-active HA with etcd coordinator</li>
+            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> mTLS, tunnel ACLs &amp; JWT revocation</li>
+            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Audit log with query API</li>
             <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Full source code access</li>
-            <li class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Community support</li>
           </ul>
           <a href="https://github.com/uloydev/tunneledge" target="_blank" class="block text-center px-6 py-3 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm transition">
             Clone on GitHub →

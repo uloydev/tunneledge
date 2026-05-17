@@ -71,5 +71,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&AgentProfileModel{},
 		&TunnelDefinitionModel{},
 		&EmailVerificationModel{},
+		&AuditEventModel{},
+		&RefreshTokenModel{},
+		&RevokedJTIModel{},
+		&TunnelACLModel{},
 	)
 }

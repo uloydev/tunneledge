@@ -205,6 +205,9 @@ func runTUI() error {
 			StreamIdleTimeout: cfg.Agent.StreamIdleTimeout,
 			TLSCAFile:         cfg.Agent.TLSCAFile,
 			TLSInsecure:       cfg.Agent.TLSInsecure,
+			MTLSEnabled:       cfg.Agent.MTLSEnabled,
+			ClientCertFile:    cfg.Agent.ClientCertFile,
+			ClientKeyFile:     cfg.Agent.ClientKeyFile,
 			EventCh:           uiEvents,
 		})
 		if err := a.Run(gctx); err != nil && gctx.Err() == nil {
@@ -301,6 +304,9 @@ func runHeadless(cmd *cobra.Command, args []string) error {
 		StreamIdleTimeout: cfg.Agent.StreamIdleTimeout,
 		TLSCAFile:         cfg.Agent.TLSCAFile,
 		TLSInsecure:       cfg.Agent.TLSInsecure,
+		MTLSEnabled:       cfg.Agent.MTLSEnabled,
+		ClientCertFile:    cfg.Agent.ClientCertFile,
+		ClientKeyFile:     cfg.Agent.ClientKeyFile,
 		Metrics:           m,
 	})
 

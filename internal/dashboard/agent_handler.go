@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"tunneledge/internal/domain"
 )
 
 type AgentHandler struct {
@@ -60,13 +62,7 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]AgentResponse, 0, len(agents))
 	for _, a := range agents {
-		resp = append(resp, AgentResponse{
-			ID:        a.ID,
-			Name:      a.Name,
-			AgentID:   a.AgentID,
-			CreatedAt: a.CreatedAt,
-			UpdatedAt: a.UpdatedAt,
-		})
+		resp = append(resp, agentToResponse(a))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -90,13 +86,7 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, AgentResponse{
-		ID:        agent.ID,
-		Name:      agent.Name,
-		AgentID:   agent.AgentID,
-		CreatedAt: agent.CreatedAt,
-		UpdatedAt: agent.UpdatedAt,
-	})
+	writeJSON(w, http.StatusOK, agentToResponse(agent))
 }
 
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -124,13 +114,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, AgentResponse{
-		ID:        agent.ID,
-		Name:      agent.Name,
-		AgentID:   agent.AgentID,
-		CreatedAt: agent.CreatedAt,
-		UpdatedAt: agent.UpdatedAt,
-	})
+	writeJSON(w, http.StatusOK, agentToResponse(agent))
 }
 
 func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +169,20 @@ func (h *AgentHandler) RotateToken(w http.ResponseWriter, r *http.Request) {
 		AgentID: out.AgentID,
 		Token:   out.RawToken,
 	})
+}
+
+func agentToResponse(a *domain.AgentProfile) AgentResponse {
+	return AgentResponse{
+		ID:              a.ID,
+		Name:            a.Name,
+		AgentID:         a.AgentID,
+		TokenExpiresAt:  a.TokenExpiresAt,
+		LastUsedAt:      a.LastUsedAt,
+		FailedAuthCount: a.FailedAuthCount,
+		LockedUntil:     a.LockedUntil,
+		CreatedAt:       a.CreatedAt,
+		UpdatedAt:       a.UpdatedAt,
+	}
 }
 
 func parseIDFromPath(path, prefix string) (uint, error) {

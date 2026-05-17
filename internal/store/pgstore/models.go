@@ -93,13 +93,64 @@ func (EmailVerificationModel) TableName() string { return "email_verifications" 
 
 type AgentProfileModel struct {
 	gorm.Model
-	UserID    uint   `gorm:"index;not null"`
-	Name      string `gorm:"size:128;not null"`
-	AgentID   string `gorm:"uniqueIndex;size:128;not null"`
-	TokenHash string `gorm:"size:256;not null"`
+	UserID          uint   `gorm:"index;not null"`
+	Name            string `gorm:"size:128;not null"`
+	AgentID         string `gorm:"uniqueIndex;size:128;not null"`
+	TokenHash       string `gorm:"size:256;not null"`
+	Scopes          string `gorm:"size:512;default:''"`
+	TokenExpiresAt  *time.Time
+	LastUsedAt      *time.Time
+	FailedAuthCount int `gorm:"default:0;not null"`
+	LockedUntil     *time.Time
 }
 
 func (AgentProfileModel) TableName() string { return "agent_profiles" }
+
+// AuditEventModel persists immutable security audit events.
+type AuditEventModel struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement"`
+	EventType  string    `gorm:"size:64;index;not null"`
+	ActorType  string    `gorm:"size:32"`
+	ActorID    string    `gorm:"size:128;index"`
+	TargetType string    `gorm:"size:32"`
+	TargetID   string    `gorm:"size:128"`
+	IPAddress  string    `gorm:"size:64"`
+	UserAgent  string    `gorm:"size:512"`
+	Metadata   string    `gorm:"type:text"` // JSON-encoded map
+	CreatedAt  time.Time `gorm:"index;not null"`
+}
+
+func (AuditEventModel) TableName() string { return "audit_events" }
+
+// RefreshTokenModel persists long-lived refresh tokens linked to a user.
+type RefreshTokenModel struct {
+	JTI       string    `gorm:"primaryKey;size:128;not null"`
+	UserID    uint      `gorm:"index;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+	RevokedAt *time.Time
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+}
+
+func (RefreshTokenModel) TableName() string { return "refresh_tokens" }
+
+// RevokedJTIModel records JWT access token JTIs that have been explicitly
+// revoked (e.g. via logout) before their natural expiry.
+type RevokedJTIModel struct {
+	JTI       string    `gorm:"primaryKey;size:128;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+}
+
+func (RevokedJTIModel) TableName() string { return "revoked_jtis" }
+
+// TunnelACLModel defines an IP-based access control rule for a tunnel.
+type TunnelACLModel struct {
+	gorm.Model
+	TunnelID string `gorm:"index;size:128;not null"`
+	ACLType  string `gorm:"size:32;not null"` // "allow_cidr" or "deny_cidr"
+	CIDR     string `gorm:"size:64;not null"`
+}
+
+func (TunnelACLModel) TableName() string { return "tunnel_acls" }
 
 type TunnelDefinitionModel struct {
 	gorm.Model

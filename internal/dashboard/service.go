@@ -25,6 +25,8 @@ type AuthService struct {
 	emailSvc      *email.Service
 	baseURL       string
 	jwtCfg        JWTConfig
+	refreshTokens domain.RefreshTokenRepository // optional; nil = refresh tokens disabled
+	refreshTTL    time.Duration
 }
 
 func NewAuthService(
@@ -41,6 +43,13 @@ func NewAuthService(
 		baseURL:       baseURL,
 		jwtCfg:        jwtCfg,
 	}
+}
+
+// WithRefreshTokens enables refresh token issuance on login.
+func (s *AuthService) WithRefreshTokens(repo domain.RefreshTokenRepository, ttl time.Duration) *AuthService {
+	s.refreshTokens = repo
+	s.refreshTTL = ttl
+	return s
 }
 
 // RegisterInput carries validated registration data.
@@ -101,10 +110,13 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*Register
 	return &RegisterOutput{Message: "registration successful, please check your email to verify your account"}, nil
 }
 
-// LoginOutput carries the signed JWT and its expiry.
+// LoginOutput carries the signed JWT and its expiry, plus an optional refresh token.
 type LoginOutput struct {
-	Token     string
-	ExpiresAt time.Time
+	Token            string
+	JTI              string
+	ExpiresAt        time.Time
+	RefreshJTI       string
+	RefreshExpiresAt time.Time
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginOutput, error) {
@@ -127,12 +139,37 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 		return nil, errs.New(errs.CodeForbidden, "please verify your email before logging in")
 	}
 
-	jwtToken, expiresAt, err := GenerateJWT(s.jwtCfg, user.ID)
+	generated, err := GenerateJWT(s.jwtCfg, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	return &LoginOutput{Token: jwtToken, ExpiresAt: expiresAt}, nil
+	out := &LoginOutput{
+		Token:     generated.Token,
+		JTI:       generated.JTI,
+		ExpiresAt: generated.ExpiresAt,
+	}
+
+	if s.refreshTokens != nil && s.refreshTTL > 0 {
+		refreshJTI, jtiErr := generateVerificationToken() // reuse random-hex generator
+		if jtiErr != nil {
+			log.Warn().Err(jtiErr).Msg("failed to generate refresh token JTI; skipping refresh token")
+		} else {
+			rt := &domain.RefreshToken{
+				JTI:       refreshJTI,
+				UserID:    user.ID,
+				ExpiresAt: time.Now().Add(s.refreshTTL),
+			}
+			if createErr := s.refreshTokens.Create(ctx, rt); createErr != nil {
+				log.Warn().Err(createErr).Msg("failed to persist refresh token; skipping")
+			} else {
+				out.RefreshJTI = refreshJTI
+				out.RefreshExpiresAt = rt.ExpiresAt
+			}
+		}
+	}
+
+	return out, nil
 }
 
 func (s *AuthService) VerifyEmail(ctx context.Context, token string) (userID uint, jwtToken string, expiresAt time.Time, err error) {
@@ -161,11 +198,11 @@ func (s *AuthService) VerifyEmail(ctx context.Context, token string) (userID uin
 
 	_ = s.verifications.DeleteByUserID(ctx, v.UserID)
 
-	signed, exp, err := GenerateJWT(s.jwtCfg, user.ID)
+	generated, err := GenerateJWT(s.jwtCfg, user.ID)
 	if err != nil {
 		return user.ID, "", time.Time{}, nil // verified, but JWT failed — caller can redirect to login
 	}
-	return user.ID, signed, exp, nil
+	return user.ID, generated.Token, generated.ExpiresAt, nil
 }
 
 func (s *AuthService) ResendVerification(ctx context.Context, emailAddr string) {
@@ -190,6 +227,43 @@ func (s *AuthService) ResendVerification(ctx context.Context, emailAddr string) 
 
 	verifyURL := fmt.Sprintf("%s/verify?token=%s", s.baseURL, token)
 	s.sendVerification(user.Email, user.Name, verifyURL)
+}
+
+// RefreshAccessToken validates a refresh JTI and issues a new access JWT.
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshJTI string) (*LoginOutput, error) {
+	if s.refreshTokens == nil {
+		return nil, errs.New(errs.CodeForbidden, "refresh tokens are not enabled")
+	}
+	rt, err := s.refreshTokens.GetByJTI(ctx, refreshJTI)
+	if err != nil {
+		return nil, errs.New(errs.CodeUnauthorized, "invalid refresh token")
+	}
+	if rt.RevokedAt != nil {
+		return nil, errs.New(errs.CodeUnauthorized, "refresh token has been revoked")
+	}
+	if rt.ExpiresAt.Before(time.Now()) {
+		return nil, errs.New(errs.CodeUnauthorized, "refresh token has expired")
+	}
+
+	generated, err := GenerateJWT(s.jwtCfg, rt.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate access token: %w", err)
+	}
+	return &LoginOutput{Token: generated.Token, JTI: generated.JTI, ExpiresAt: generated.ExpiresAt}, nil
+}
+
+// RevokeSession revokes a JWT jti and its associated refresh token.
+func (s *AuthService) RevokeSession(ctx context.Context, jti string, jtiExpiresAt time.Time, refreshJTI string, revokedRepo domain.RevokedJTIRepository) {
+	if revokedRepo != nil && jti != "" {
+		if err := revokedRepo.Revoke(ctx, jti, jtiExpiresAt); err != nil {
+			log.Warn().Err(err).Str("jti", jti).Msg("failed to revoke JWT jti on logout")
+		}
+	}
+	if s.refreshTokens != nil && refreshJTI != "" {
+		if err := s.refreshTokens.Revoke(ctx, refreshJTI); err != nil {
+			log.Warn().Err(err).Str("refresh_jti", refreshJTI).Msg("failed to revoke refresh token on logout")
+		}
+	}
 }
 
 func (s *AuthService) sendVerification(emailAddr, name, verifyURL string) {

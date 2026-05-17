@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"io"
 	"net"
+	"net/netip"
 	"time"
 
 	"tunneledge/internal/relay"
@@ -86,6 +87,43 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 		logger.Warn().Int64("max_streams", g.maxStreams).Msg("stream limit reached")
 		conn.Close()
 		return
+	}
+
+	if g.maxStreamsPerTunnel > 0 && int64(g.streamManager.CountByTunnel(tunnelID)) >= g.maxStreamsPerTunnel {
+		logger.Warn().Int64("max_streams_per_tunnel", g.maxStreamsPerTunnel).Msg("per-tunnel stream limit reached")
+		conn.Close()
+		return
+	}
+
+	// Tunnel ACL enforcement: deny-first CIDR rules.
+	if g.tunnelACLs != nil {
+		clientIPStr, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+		clientAddr, parseErr := netip.ParseAddr(clientIPStr)
+		if parseErr == nil {
+			acls, aclErr := g.tunnelACLs.List(ctx, tunnelID)
+			if aclErr == nil && len(acls) > 0 {
+				allowed := false
+				for _, acl := range acls {
+					prefix, prefixErr := netip.ParsePrefix(acl.CIDR)
+					if prefixErr != nil {
+						continue
+					}
+					if prefix.Contains(clientAddr) {
+						if acl.ACLType == "deny" {
+							logger.Warn().Str("client_ip", clientIPStr).Str("cidr", acl.CIDR).Msg("ACL denied connection")
+							conn.Close()
+							return
+						}
+						allowed = true
+					}
+				}
+				if !allowed {
+					logger.Warn().Str("client_ip", clientIPStr).Msg("no matching ACL allow rule; denying connection")
+					conn.Close()
+					return
+				}
+			}
+		}
 	}
 
 	qstream, err := at.conn.OpenStreamSync(ctx)

@@ -23,6 +23,7 @@ func (r *PGAgentProfileRepository) Create(ctx context.Context, agent *domain.Age
 		Name:      agent.Name,
 		AgentID:   agent.AgentID,
 		TokenHash: agent.TokenHash,
+		Scopes:    scopesToString(agent.Scopes),
 	}
 	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
 		return fmt.Errorf("failed to create agent profile: %w", err)
@@ -65,14 +66,27 @@ func (r *PGAgentProfileRepository) ListByUserID(ctx context.Context, userID uint
 func (r *PGAgentProfileRepository) Update(ctx context.Context, agent *domain.AgentProfile) error {
 	result := r.db.WithContext(ctx).Model(&AgentProfileModel{}).Where("id = ?", agent.ID).
 		Updates(map[string]interface{}{
-			"name":       agent.Name,
-			"agent_id":   agent.AgentID,
-			"token_hash": agent.TokenHash,
+			"name":             agent.Name,
+			"agent_id":         agent.AgentID,
+			"token_hash":       agent.TokenHash,
+			"scopes":           scopesToString(agent.Scopes),
+			"token_expires_at": agent.TokenExpiresAt,
 		})
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("agent profile %d not found", agent.ID)
 	}
 	return result.Error
+}
+
+// UpdateSecurityFields updates auth-related counters and timestamps without
+// touching the token hash or other user-controlled fields.
+func (r *PGAgentProfileRepository) UpdateSecurityFields(ctx context.Context, agent *domain.AgentProfile) error {
+	updates := map[string]interface{}{
+		"failed_auth_count": agent.FailedAuthCount,
+		"last_used_at":      agent.LastUsedAt,
+		"locked_until":      agent.LockedUntil,
+	}
+	return r.db.WithContext(ctx).Model(&AgentProfileModel{}).Where("id = ?", agent.ID).Updates(updates).Error
 }
 
 func (r *PGAgentProfileRepository) Delete(ctx context.Context, id uint) error {
@@ -85,14 +99,52 @@ func (r *PGAgentProfileRepository) Delete(ctx context.Context, id uint) error {
 
 func modelToAgentProfile(m *AgentProfileModel) *domain.AgentProfile {
 	return &domain.AgentProfile{
-		ID:        m.ID,
-		UserID:    m.UserID,
-		Name:      m.Name,
-		AgentID:   m.AgentID,
-		TokenHash: m.TokenHash,
-		CreatedAt: m.CreatedAt,
-		UpdatedAt: m.UpdatedAt,
+		ID:              m.ID,
+		UserID:          m.UserID,
+		Name:            m.Name,
+		AgentID:         m.AgentID,
+		TokenHash:       m.TokenHash,
+		Scopes:          stringToScopes(m.Scopes),
+		TokenExpiresAt:  m.TokenExpiresAt,
+		LastUsedAt:      m.LastUsedAt,
+		FailedAuthCount: m.FailedAuthCount,
+		LockedUntil:     m.LockedUntil,
+		CreatedAt:       m.CreatedAt,
+		UpdatedAt:       m.UpdatedAt,
 	}
+}
+
+// scopesToString serialises a scopes slice to a comma-separated string.
+func scopesToString(scopes []string) string {
+	if len(scopes) == 0 {
+		return ""
+	}
+	result := ""
+	for i, s := range scopes {
+		if i > 0 {
+			result += ","
+		}
+		result += s
+	}
+	return result
+}
+
+// stringToScopes splits a comma-separated scopes string back into a slice.
+func stringToScopes(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == ',' {
+			if part := s[start:i]; part != "" {
+				out = append(out, part)
+			}
+			start = i + 1
+		}
+	}
+	return out
 }
 
 // ListTokenHashes returns a hash→agentID map from agent_profiles.

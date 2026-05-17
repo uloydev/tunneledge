@@ -37,6 +37,10 @@ type Agent struct {
 	streamIdleTimeout time.Duration
 	tlsCAFile         string
 	tlsInsecure       bool
+	// mTLS: present a client certificate to the gateway.
+	mtlsEnabled    bool
+	clientCertFile string
+	clientKeyFile  string
 
 	mu          sync.RWMutex
 	conn        *quic.Conn
@@ -64,6 +68,10 @@ type Options struct {
 	Metrics           *metrics.Metrics
 	TLSCAFile         string
 	TLSInsecure       bool
+	// mTLS: present a client certificate to the gateway.
+	MTLSEnabled    bool
+	ClientCertFile string
+	ClientKeyFile  string
 
 	// EventCh is an optional buffered channel for broadcasting AgentEvents to the TUI.
 	// If nil, all event emission is skipped (headless mode).
@@ -90,6 +98,9 @@ func NewAgent(opts Options) *Agent {
 		publicURLs:        make(map[string]string),
 		tlsCAFile:         opts.TLSCAFile,
 		tlsInsecure:       opts.TLSInsecure,
+		mtlsEnabled:       opts.MTLSEnabled,
+		clientCertFile:    opts.ClientCertFile,
+		clientKeyFile:     opts.ClientKeyFile,
 		reconnectCh:       make(chan struct{}, 1),
 		eventCh:           opts.EventCh,
 	}
@@ -273,8 +284,12 @@ func (a *Agent) connect(ctx context.Context, gatewayAddr string) (err error) {
 
 	var tlsCfg *tls.Config
 
-	if a.tlsCAFile != "" {
-		var err error
+	if a.mtlsEnabled && a.clientCertFile != "" && a.clientKeyFile != "" && a.tlsCAFile != "" {
+		tlsCfg, err = transport.LoadMTLSClientConfig(a.clientCertFile, a.clientKeyFile, a.tlsCAFile)
+		if err != nil {
+			return fmt.Errorf("load mTLS client config: %w", err)
+		}
+	} else if a.tlsCAFile != "" {
 		tlsCfg, err = transport.ClientTLSConfigWithCA(a.tlsCAFile)
 		if err != nil {
 			return fmt.Errorf("load TLS CA: %w", err)

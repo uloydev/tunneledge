@@ -29,3 +29,4 @@ Thumbs.db
 ./gateway
 ./http-echo
 ./registry
+./main

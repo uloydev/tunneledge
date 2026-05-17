@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"tunneledge/internal/auth"
 	"tunneledge/pkg/observability"
 
 	"github.com/rs/zerolog/log"
@@ -59,8 +60,11 @@ func AuthInterceptor(token string) grpc.UnaryServerInterceptor {
 	}
 }
 
-func NewGRPCServer(authToken string) *grpc.Server {
+func NewGRPCServer(authToken string, rateLimitRPM int) *grpc.Server {
 	interceptors := []grpc.UnaryServerInterceptor{LoggingInterceptor}
+	if rateLimitRPM > 0 {
+		interceptors = append(interceptors, RateLimitInterceptor(rateLimitRPM))
+	}
 	if authToken != "" {
 		interceptors = append(interceptors, AuthInterceptor(authToken))
 	}
@@ -74,6 +78,21 @@ func NewGRPCServer(authToken string) *grpc.Server {
 		}),
 		grpc.ChainUnaryInterceptor(interceptors...),
 	)
+}
+
+// RateLimitInterceptor returns a gRPC interceptor that rate-limits requests
+// per peer IP address to rpm requests per minute.
+func RateLimitInterceptor(rpm int) grpc.UnaryServerInterceptor {
+	limiter := auth.NewIPRateLimiter(rpm, rpm)
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		p, ok := peer.FromContext(ctx)
+		if ok && p.Addr != nil {
+			if !limiter.Allow(p.Addr.String()) {
+				return nil, status.Errorf(codes.ResourceExhausted, "rate limit exceeded")
+			}
+		}
+		return handler(ctx, req)
+	}
 }
 
 func CodeToString(c codes.Code) string {

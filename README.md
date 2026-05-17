@@ -10,6 +10,7 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 
 - **Phase 1 — Stability & Hardening:** complete.
 - **Phase 2 — HA & Distributed Coordination:** **complete.** Multi-active gateway topology with watch-driven distributed routing, etcd coordination backend, relay lease management, health reporting, agent failover, and public TCP edge are all shipped.
+- **Phase 3 — Security Hardening:** **complete.** mTLS transport helpers and agent/gateway wiring; agent token expiry and lockout; JWT `jti`/`aud` claims with revocation; refresh tokens; tunnel CIDR ACLs; per-IP rate limiting throughout (auth, gRPC, dashboard); per-agent tunnel quotas; per-tunnel stream quotas; relay bandwidth limiting; async audit log with query endpoint.
 
 The default Docker Compose stack deploys two gateways behind an nginx TCP edge. Either gateway can serve any tunnel: if a public request arrives at `gateway-1` but the tunnel is owned by `gateway-2`, the connection is transparently proxied at L4. For HA registry coordination, point `TE_REGISTRY_ETCD_ENDPOINTS` at an etcd cluster — the in-memory coordinator is the single-node default.
 
@@ -324,11 +325,12 @@ All services use the `TE_` prefix:
 
 ## Future Improvements
 
-- Full Phase 3 security hardening: mTLS, token rotation, and audit logging
 - UDP forwarding support
 - HTTP tunnel mode with request inspection
 - Trace dashboards and exemplars (Grafana Tempo / Jaeger integration)
 - Kubernetes deployment (Helm charts)
+- Phase 4: Advanced networking (UDP, HTTP inspection, traffic shaping)
+- Phase 5: Kubernetes & platform engineering
 - Let's Encrypt / ACME auto-cert for wildcard domains
 - Multi-region routing with anycast
 - Web Application Firewall (WAF) rules

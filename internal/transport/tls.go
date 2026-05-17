@@ -38,8 +38,11 @@ func LoadPublicTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 }
 
 func ClientTLSConfig() *tls.Config {
+	// WARNING: InsecureSkipVerify=true disables server certificate validation.
+	// This is acceptable for local development but MUST NOT be used in production.
+	// Set TLSCAFile in the agent config to enable proper CA validation.
 	return &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, //nolint:gosec // intentional dev-only fallback
 		NextProtos:         []string{"tunneledge"},
 		MinVersion:         tls.VersionTLS13,
 	}
@@ -120,4 +123,51 @@ func buildPublicTLSConfig(cert tls.Certificate) *tls.Config {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}
+}
+
+// LoadMTLSServerConfig returns a TLS config for a server that requires and
+// validates client certificates signed by the specified CA.
+func LoadMTLSServerConfig(certFile, keyFile, clientCAFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load server cert/key: %w", err)
+	}
+	caCert, err := os.ReadFile(clientCAFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read client CA cert: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse client CA cert")
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientCAs:    pool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		NextProtos:   []string{"tunneledge"},
+		MinVersion:   tls.VersionTLS13,
+	}, nil
+}
+
+// LoadMTLSClientConfig returns a TLS config for a client that presents a
+// certificate to the server and validates the server against the provided CA.
+func LoadMTLSClientConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load client cert/key: %w", err)
+	}
+	caCert, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA cert: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse CA cert")
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      pool,
+		NextProtos:   []string{"tunneledge"},
+		MinVersion:   tls.VersionTLS13,
+	}, nil
 }

@@ -12,6 +12,11 @@ registry:
   cleanup_interval: 30s
   # tls_cert_file: /path/to/registry.crt
   # tls_key_file: /path/to/registry.key
+  # Phase 3: mTLS — require client certificates from gateways
+  # mtls_enabled: false
+  # client_ca_file: /path/to/certs/ca.crt
+  # Phase 3: gRPC rate limiting
+  # auth_rate_limit_rpm: 120
   # etcd_endpoints:          # Uncomment to enable HA etcd coordinator
   #   - http://localhost:2379
   # etcd_dial_timeout: 5s

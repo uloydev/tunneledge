@@ -44,11 +44,31 @@ type AgentResponse struct {
 	AgentID   string    `json:"agent_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Phase 3 security fields (omitted when zero)
+	TokenExpiresAt  *time.Time `json:"token_expires_at,omitempty"`
+	LastUsedAt      *time.Time `json:"last_used_at,omitempty"`
+	FailedAuthCount int        `json:"failed_auth_count,omitempty"`
+	LockedUntil     *time.Time `json:"locked_until,omitempty"`
 }
 
 type AgentTokenResponse struct {
 	AgentID string `json:"agent_id"`
 	Token   string `json:"token"`
+}
+
+// Tunnel ACL DTOs
+
+type CreateTunnelACLRequest struct {
+	CIDR    string `json:"cidr"`
+	ACLType string `json:"acl_type"` // "allow" or "deny"
+}
+
+type TunnelACLResponse struct {
+	ID        uint      `json:"id"`
+	TunnelID  string    `json:"tunnel_id"`
+	ACLType   string    `json:"acl_type"`
+	CIDR      string    `json:"cidr"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Tunnel DTOs

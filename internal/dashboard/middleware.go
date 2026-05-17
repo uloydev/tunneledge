@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"tunneledge/internal/domain"
 	"tunneledge/pkg/observability"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -28,6 +29,7 @@ type contextKey string
 const (
 	userIDKey    contextKey = "user_id"
 	requestIDKey contextKey = "request_id"
+	jtiKey       contextKey = "jwt_jti"
 
 	// ExportedUserIDKey is the same key exposed for use in tests.
 	ExportedUserIDKey = userIDKey
@@ -36,6 +38,12 @@ const (
 func UserIDFromContext(ctx context.Context) (uint, bool) {
 	id, ok := ctx.Value(userIDKey).(uint)
 	return id, ok
+}
+
+// JTIFromContext returns the JWT jti claim stored by JWTAuthMiddleware.
+func JTIFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(jtiKey).(string)
+	return v
 }
 
 // RequestIDFromContext returns the request ID injected by RequestIDMiddleware.
@@ -66,19 +74,43 @@ type JWTConfig struct {
 	TTL    time.Duration
 }
 
-func GenerateJWT(cfg JWTConfig, userID uint) (string, time.Time, error) {
+// GeneratedJWT holds the result of a successful JWT generation.
+type GeneratedJWT struct {
+	Token     string
+	JTI       string
+	ExpiresAt time.Time
+}
+
+// generateJTI creates a random UUID v4 string for use as a JWT jti claim.
+func generateJTI() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+
+func GenerateJWT(cfg JWTConfig, userID uint) (GeneratedJWT, error) {
+	jti, err := generateJTI()
+	if err != nil {
+		return GeneratedJWT{}, fmt.Errorf("failed to generate jti: %w", err)
+	}
 	expiresAt := time.Now().Add(cfg.TTL)
 	claims := jwt.MapClaims{
 		"sub": userID,
 		"exp": expiresAt.Unix(),
 		"iat": time.Now().Unix(),
+		"jti": jti,
+		"aud": []string{"tunneledge"},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString([]byte(cfg.Secret))
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to sign JWT: %w", err)
+		return GeneratedJWT{}, fmt.Errorf("failed to sign JWT: %w", err)
 	}
-	return signed, expiresAt, nil
+	return GeneratedJWT{Token: signed, JTI: jti, ExpiresAt: expiresAt}, nil
 }
 
 func parseJWT(secret, tokenStr string) (jwt.MapClaims, error) {
@@ -98,10 +130,15 @@ func parseJWT(secret, tokenStr string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
-func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
+// JWTMiddlewareOptions configures JWTAuthMiddleware.
+type JWTMiddlewareOptions struct {
+	Secret      string
+	RevokedRepo domain.RevokedJTIRepository // optional; nil = no revocation check
+}
+
+func JWTAuthMiddleware(opts JWTMiddlewareOptions) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Try Authorization header first (API), then session cookie (web)
 			tokenStr := ""
 
 			authHeader := r.Header.Get("Authorization")
@@ -119,7 +156,6 @@ func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 			}
 
 			if tokenStr == "" {
-				// Check if this is an HTML request — redirect to login
 				if strings.Contains(r.Header.Get("Accept"), "text/html") {
 					http.Redirect(w, r, "/login", http.StatusSeeOther)
 					return
@@ -127,12 +163,13 @@ func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 				writeError(w, http.StatusUnauthorized, "missing authorization")
 				return
 			}
+
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 				}
-				return []byte(secret), nil
-			})
+				return []byte(opts.Secret), nil
+			}, jwt.WithAudience("tunneledge"), jwt.WithExpirationRequired())
 
 			if err != nil || !token.Valid {
 				writeError(w, http.StatusUnauthorized, "invalid or expired token")
@@ -145,19 +182,24 @@ func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			sub, err := claims.GetSubject()
-			if err != nil {
-				// sub is stored as float64 via MapClaims
-				subFloat, ok := claims["sub"].(float64)
-				if !ok {
-					writeError(w, http.StatusUnauthorized, "invalid token subject")
-					return
+			ctx := r.Context()
+
+			// Check JTI revocation if a revocation store is configured.
+			if jtiVal, ok := claims["jti"].(string); ok && jtiVal != "" {
+				ctx = context.WithValue(ctx, jtiKey, jtiVal)
+				if opts.RevokedRepo != nil {
+					revoked, rErr := opts.RevokedRepo.IsRevoked(ctx, jtiVal)
+					if rErr != nil {
+						log.Warn().Err(rErr).Msg("revocation check failed; rejecting token for safety")
+						writeError(w, http.StatusUnauthorized, "authorization check failed")
+						return
+					}
+					if revoked {
+						writeError(w, http.StatusUnauthorized, "token has been revoked")
+						return
+					}
 				}
-				ctx := context.WithValue(r.Context(), userIDKey, uint(subFloat))
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
 			}
-			_ = sub
 
 			subFloat, ok := claims["sub"].(float64)
 			if !ok {
@@ -165,7 +207,7 @@ func JWTAuthMiddleware(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userIDKey, uint(subFloat))
+			ctx = context.WithValue(ctx, userIDKey, uint(subFloat))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -282,17 +324,60 @@ func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
 	return lim
 }
 
-// authLimiter allows 5 requests per minute with a burst of 10, per source IP.
+// extractClientIP returns the best-effort client IP, respecting X-Forwarded-For
+// and X-Real-IP headers set by trusted reverse proxies.
+func extractClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if idx := strings.IndexByte(xff, ','); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+// authLimiter is the default per-IP rate limiter for auth endpoints (5 rpm).
 var authLimiter = newIPRateLimiter(rate.Every(12*time.Second), 5) // 5 rpm, burst 5
 
+// NewRateLimitMiddleware returns a middleware that rejects requests exceeding
+// rpm requests-per-minute per source IP with HTTP 429, including rate-limit headers.
+func NewRateLimitMiddleware(rpm int) func(http.Handler) http.Handler {
+	if rpm <= 0 {
+		rpm = 5
+	}
+	limiter := newIPRateLimiter(rate.Every(time.Minute/time.Duration(rpm)), rpm)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := extractClientIP(r)
+			l := limiter.getLimiter(ip)
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", rpm))
+			if !l.Allow() {
+				res := l.Reserve()
+				delay := int(res.Delay().Seconds()) + 1
+				res.Cancel()
+				w.Header().Set("Retry-After", fmt.Sprintf("%d", delay))
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RateLimitMiddleware rejects requests that exceed the per-IP rate limit with
-// HTTP 429.
+// HTTP 429. Uses the default authLimiter (5 rpm). Prefer NewRateLimitMiddleware
+// for configurable limits.
 func RateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
+		ip := extractClientIP(r)
 		if !authLimiter.getLimiter(ip).Allow() {
 			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
 			return

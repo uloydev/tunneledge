@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type User struct {
 	ID            uint
@@ -26,8 +29,32 @@ type AgentProfile struct {
 	Name      string
 	AgentID   string
 	TokenHash string
+	// Phase 3 security fields.
+	Scopes          []string   // e.g. ["tunnel:connect"]
+	TokenExpiresAt  *time.Time // nil = never expires
+	LastUsedAt      *time.Time
+	FailedAuthCount int
+	LockedUntil     *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// TunnelACL defines an IP-based access control rule for a tunnel.
+// Rules are evaluated in order: deny rules first, then allow rules.
+// An empty rule set means allow-all.
+type TunnelACL struct {
+	ID        uint
+	TunnelID  string // matches TunnelSession.TunnelID
+	ACLType   string // "allow_cidr" or "deny_cidr"
+	CIDR      string
 	CreatedAt time.Time
-	UpdatedAt time.Time
+}
+
+// TunnelACLRepository manages IP ACLs associated with tunnels.
+type TunnelACLRepository interface {
+	List(ctx context.Context, tunnelID string) ([]TunnelACL, error)
+	Create(ctx context.Context, acl *TunnelACL) error
+	Delete(ctx context.Context, id uint) error
 }
 
 type TunnelConfig struct {

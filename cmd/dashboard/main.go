@@ -94,6 +94,15 @@ func main() {
 		opts.Tunnels = pgstore.NewPGTunnelConfigRepository(db)
 		opts.Sessions = pgstore.NewPGSessionRepository(db)
 		opts.Verifications = pgstore.NewPGEmailVerificationRepository(db)
+		// Phase 3: security repos
+		pgRefreshRepo := pgstore.NewRefreshTokenRepository(db)
+		opts.RevokedJTIs = pgstore.NewRevokedJTIRepository(db)
+		opts.RefreshTokens = pgRefreshRepo
+		opts.RefreshTokenEnabled = cfg.Dashboard.RefreshTokenEnabled
+		opts.RefreshTokenTTL = cfg.Dashboard.RefreshTokenTTL
+		opts.AuthRateLimitRPM = cfg.Dashboard.AuthRateLimitRPM
+		opts.TunnelACLs = pgstore.NewTunnelACLRepository(db)
+		opts.AuditRepo = pgstore.NewAuditRepository(db)
 	} else {
 		log.Fatal().Msg("dashboard requires postgres database, set db_driver=postgres and db_dsn")
 	}

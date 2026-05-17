@@ -73,7 +73,7 @@ func main() {
 		metricsSrv.Start()
 	}
 
-	grpcSrv := registry.NewGRPCServer(cfg.Registry.GRPCAuthToken)
+	grpcSrv := registry.NewGRPCServer(cfg.Registry.GRPCAuthToken, cfg.Registry.AuthRateLimitRPM)
 	pb.RegisterRegistryServiceServer(grpcSrv, srv)
 
 	lis, err := net.Listen("tcp", cfg.Registry.GRPCListenAddr)

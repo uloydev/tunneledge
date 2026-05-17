@@ -30,6 +30,19 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	traceID, spanID := observability.TraceIDs(ctx)
 	logger := log.With().Str("remote_addr", remoteAddr).Str("trace_id", traceID).Str("span_id", spanID).Logger()
 
+	// Phase 3: per-IP auth rate limiting.
+	if g.authRateLimiter != nil {
+		remoteIP, _, _ := strings.Cut(remoteAddr, ":")
+		if remoteIP == "" {
+			remoteIP = remoteAddr
+		}
+		if !g.authRateLimiter.Allow(remoteIP) {
+			logger.Warn().Str("remote_ip", remoteIP).Msg("auth rate limit exceeded; closing connection")
+			conn.CloseWithError(1, "rate limit exceeded")
+			return
+		}
+	}
+
 	acceptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -193,6 +206,15 @@ func (g *Gateway) handleV2Auth(ctx context.Context, qstream *quic.Stream, conn *
 		return "", "", "", "", err
 	}
 
+	// Phase 3: tunnel quota enforcement.
+	if g.maxTunnelsPerAgent > 0 {
+		if count := g.countTunnelsByAgent(agentID); count >= g.maxTunnelsPerAgent {
+			logger.Warn().Str("agent_id", agentID).Int("count", count).Int("max", g.maxTunnelsPerAgent).Msg("tunnel quota exceeded")
+			_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
+			return "", "", "", "", fmt.Errorf("tunnel quota exceeded for agent %s", agentID)
+		}
+	}
+
 	routes := make([]domain.TunnelRoute, 0, len(authMsg.Tunnels))
 	hostEntries := make([]transport.TunnelHostEntry, 0, len(authMsg.Tunnels))
 
@@ -295,6 +317,19 @@ func (g *Gateway) agentStreamLoop(ctx context.Context, conn *quic.Conn, tunnelID
 			s.Close()
 		}
 	}
+}
+
+// countTunnelsByAgent returns the number of active tunnels associated with agentID.
+func (g *Gateway) countTunnelsByAgent(agentID string) int {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	count := 0
+	for _, at := range g.tunnels {
+		if at.tunnel.AgentID == agentID {
+			count++
+		}
+	}
+	return count
 }
 
 func (g *Gateway) heartbeatLoop(ctx context.Context, tunnelID string) {

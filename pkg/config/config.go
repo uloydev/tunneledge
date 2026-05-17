@@ -27,8 +27,12 @@ type AgentConfig struct {
 	QUICTimeout       time.Duration  `mapstructure:"quic_timeout"`
 	TLSCAFile         string         `mapstructure:"tls_ca_file"`
 	TLSInsecure       bool           `mapstructure:"tls_insecure"`
-	APIURL            string         `mapstructure:"api_url"`
-	StreamIdleTimeout time.Duration  `mapstructure:"stream_idle_timeout"`
+	// mTLS: present a client certificate to the gateway.
+	MTLSEnabled       bool          `mapstructure:"mtls_enabled"`
+	ClientCertFile    string        `mapstructure:"client_cert_file"`
+	ClientKeyFile     string        `mapstructure:"client_key_file"`
+	APIURL            string        `mapstructure:"api_url"`
+	StreamIdleTimeout time.Duration `mapstructure:"stream_idle_timeout"`
 }
 
 type GatewayConfig struct {
@@ -49,6 +53,17 @@ type GatewayConfig struct {
 	MaxStreams           int64         `mapstructure:"max_streams"`
 	GRPCAuthToken        string        `mapstructure:"grpc_auth_token"`
 	StreamIdleTimeout    time.Duration `mapstructure:"stream_idle_timeout"`
+	// mTLS: require and validate client certificates from agents.
+	MTLSEnabled  bool   `mapstructure:"mtls_enabled"`
+	ClientCAFile string `mapstructure:"client_ca_file"`
+	// mTLS towards registry: present a client certificate on the gRPC connection.
+	RegistryMTLS     bool   `mapstructure:"registry_mtls"`
+	RegistryCertFile string `mapstructure:"registry_cert_file"`
+	RegistryKeyFile  string `mapstructure:"registry_key_file"`
+	// Abuse prevention.
+	AuthRateLimitRPM    int   `mapstructure:"auth_rate_limit_rpm"`
+	MaxTunnelsPerAgent  int   `mapstructure:"max_tunnels_per_agent"`
+	MaxStreamsPerTunnel int64 `mapstructure:"max_streams_per_tunnel"`
 }
 
 type RegistryConfig struct {
@@ -62,6 +77,10 @@ type RegistryConfig struct {
 	// When empty (default), the in-memory coordinator is used.
 	EtcdEndpoints   []string      `mapstructure:"etcd_endpoints"`
 	EtcdDialTimeout time.Duration `mapstructure:"etcd_dial_timeout"`
+	// mTLS: require and validate client certificates from gateways.
+	MTLSEnabled      bool   `mapstructure:"mtls_enabled"`
+	ClientCAFile     string `mapstructure:"client_ca_file"`
+	AuthRateLimitRPM int    `mapstructure:"auth_rate_limit_rpm"`
 }
 
 type DashboardConfig struct {
@@ -72,6 +91,12 @@ type DashboardConfig struct {
 	SMTPHost       string        `mapstructure:"smtp_host"`
 	SMTPPort       int           `mapstructure:"smtp_port"`
 	SMTPFrom       string        `mapstructure:"smtp_from"`
+	// Token hardening.
+	RefreshTokenEnabled bool          `mapstructure:"refresh_token_enabled"`
+	RefreshTokenTTL     time.Duration `mapstructure:"refresh_token_ttl"`
+	AuthRateLimitRPM    int           `mapstructure:"auth_rate_limit_rpm"`
+	MaxFailedLogins     int           `mapstructure:"max_failed_logins"`
+	LockoutDuration     time.Duration `mapstructure:"lockout_duration"`
 }
 
 // LogConfig holds structured logging settings.
@@ -146,6 +171,7 @@ func defaults(svc ServiceType) {
 		viper.SetDefault("agent.quic_timeout", 30*time.Second)
 		viper.SetDefault("agent.tls_insecure", true)
 		viper.SetDefault("agent.stream_idle_timeout", 30*time.Second)
+		viper.SetDefault("agent.mtls_enabled", false)
 	case ServiceGateway:
 		viper.SetDefault("gateway.quic_listen_addr", ":4433")
 		viper.SetDefault("gateway.public_listen_addr", ":443")
@@ -160,11 +186,18 @@ func defaults(svc ServiceType) {
 		viper.SetDefault("gateway.max_streams", int64(1000))
 		viper.SetDefault("gateway.grpc_auth_token", "")
 		viper.SetDefault("gateway.stream_idle_timeout", 30*time.Second)
+		viper.SetDefault("gateway.mtls_enabled", false)
+		viper.SetDefault("gateway.registry_mtls", false)
+		viper.SetDefault("gateway.auth_rate_limit_rpm", 60)
+		viper.SetDefault("gateway.max_tunnels_per_agent", 20)
+		viper.SetDefault("gateway.max_streams_per_tunnel", int64(100))
 	case ServiceRegistry:
 		viper.SetDefault("registry.grpc_listen_addr", ":50051")
 		viper.SetDefault("registry.session_ttl", 5*time.Minute)
 		viper.SetDefault("registry.cleanup_interval", 30*time.Second)
 		viper.SetDefault("registry.grpc_auth_token", "")
+		viper.SetDefault("registry.mtls_enabled", false)
+		viper.SetDefault("registry.auth_rate_limit_rpm", 120)
 	case ServiceDashboard:
 		viper.SetDefault("dashboard.http_listen_addr", ":8080")
 		viper.SetDefault("dashboard.jwt_secret", "")
@@ -173,6 +206,11 @@ func defaults(svc ServiceType) {
 		viper.SetDefault("dashboard.smtp_host", "localhost")
 		viper.SetDefault("dashboard.smtp_port", 1025)
 		viper.SetDefault("dashboard.smtp_from", "noreply@tunneledge.dev")
+		viper.SetDefault("dashboard.refresh_token_enabled", false)
+		viper.SetDefault("dashboard.refresh_token_ttl", 7*24*time.Hour)
+		viper.SetDefault("dashboard.auth_rate_limit_rpm", 5)
+		viper.SetDefault("dashboard.max_failed_logins", 10)
+		viper.SetDefault("dashboard.lockout_duration", 15*time.Minute)
 	}
 }
 
