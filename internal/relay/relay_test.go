@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -63,4 +64,38 @@ func TestBidirectional_Cancellation(t *testing.T) {
 	_, _ = Bidirectional(ctx, aServer, bServer)
 	_ = aClient.Close()
 	_ = bClient.Close()
+}
+
+func TestBidirectional_BackpressureTimeout(t *testing.T) {
+	aClient, aServer := net.Pipe()
+	bClient, bServer := net.Pipe()
+	defer aClient.Close()
+	defer bClient.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		payload := []byte("0123456789abcdef")
+		_, err := aClient.Write(payload)
+		writeDone <- err
+	}()
+
+	result, err := bidirectionalWithOptions(ctx, aServer, bServer, 0, nil, relayOptions{
+		bufferSize:     4,
+		queueSize:      1,
+		enqueueTimeout: 20 * time.Millisecond,
+		writeTimeout:   20 * time.Millisecond,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrBackpressure) || result.Stats.GetQueueTimeouts() > 0)
+	assert.GreaterOrEqual(t, result.Stats.GetDroppedFrames(), int64(1))
+	assert.GreaterOrEqual(t, result.Stats.GetMaxQueueDepth(), 1)
+
+	select {
+	case <-writeDone:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not unblock after backpressure shutdown")
+	}
 }

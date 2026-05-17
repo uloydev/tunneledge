@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 type activeTunnel struct {
@@ -38,6 +40,7 @@ type Gateway struct {
 	tlsCertFile       string
 	tlsKeyFile        string
 	maxStreams        int64
+	shutdownTimeout   time.Duration
 	streamIdleTimeout time.Duration
 }
 
@@ -48,6 +51,7 @@ type Options struct {
 	TLSCertFile       string
 	TLSKeyFile        string
 	MaxStreams        int64
+	ShutdownTimeout   time.Duration
 	StreamIdleTimeout time.Duration
 	Authenticator     auth.Authenticator
 	RegistryClient    domain.RegistryClient
@@ -75,8 +79,16 @@ func NewGateway(opts Options) (*Gateway, error) {
 		tlsCertFile:       opts.TLSCertFile,
 		tlsKeyFile:        opts.TLSKeyFile,
 		maxStreams:        opts.MaxStreams,
+		shutdownTimeout:   gatewayShutdownTimeout(opts.ShutdownTimeout),
 		streamIdleTimeout: streamIdleTimeout(opts.StreamIdleTimeout),
 	}, nil
+}
+
+func gatewayShutdownTimeout(v time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return 15 * time.Second
 }
 
 // streamIdleTimeout returns v when positive, otherwise the safe default of 30s.
@@ -116,15 +128,29 @@ func (g *Gateway) Run(ctx context.Context) error {
 		Str("base_domain", g.baseDomain).
 		Msg("gateway listeners started")
 
-	go g.acceptAgents(ctx, quicListener)
-	go g.acceptPublicConnections(ctx, publicLn)
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	group, groupCtx := errgroup.WithContext(runCtx)
+	group.Go(func() error {
+		return g.acceptAgents(groupCtx, quicListener)
+	})
+	group.Go(func() error {
+		return g.acceptPublicConnections(groupCtx, publicLn)
+	})
 
 	<-ctx.Done()
+	cancel()
+	_ = quicListener.Close()
+	_ = publicLn.Close()
+	if err := group.Wait(); err != nil {
+		return err
+	}
+
 	log.Info().Msg("gateway shutting down — draining connections")
 
 	// Drain: wait for active streams to finish within ShutdownTimeout
-	drainTimeout := 15 * time.Second
-	drainCtx, drainCancel := context.WithTimeout(context.Background(), drainTimeout)
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), g.shutdownTimeout)
 	defer drainCancel()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -150,45 +176,56 @@ forceClose:
 	return nil
 }
 
-func (g *Gateway) acceptAgents(ctx context.Context, listener *quic.Listener) {
+
+func (g *Gateway) acceptAgents(ctx context.Context, listener *quic.Listener) error {
+	workers, workerCtx := errgroup.WithContext(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return workers.Wait()
 		default:
 		}
 
 		conn, err := listener.Accept(ctx)
 		if err != nil {
-			if ctx.Err() != nil {
-				return
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return workers.Wait()
 			}
-			log.Error().Err(err).Msg("failed to accept QUIC connection")
-			continue
+			return fmt.Errorf("failed to accept QUIC connection: %w", err)
 		}
 
-		go g.handleAgentConnection(ctx, conn)
+		agentConn := conn
+		workers.Go(func() error {
+			g.handleAgentConnection(workerCtx, agentConn)
+			return nil
+		})
 	}
 }
 
-func (g *Gateway) acceptPublicConnections(ctx context.Context, ln net.Listener) {
+func (g *Gateway) acceptPublicConnections(ctx context.Context, ln net.Listener) error {
+	workers, workerCtx := errgroup.WithContext(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return workers.Wait()
 		default:
 		}
 
 		conn, err := ln.Accept()
 		if err != nil {
-			if ctx.Err() != nil {
-				return
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return workers.Wait()
 			}
-			log.Error().Err(err).Msg("failed to accept public connection")
-			continue
+			return fmt.Errorf("failed to accept public connection: %w", err)
 		}
 
-		go g.handlePublicConnection(ctx, conn)
+		publicConn := conn
+		workers.Go(func() error {
+			g.handlePublicConnection(workerCtx, publicConn)
+			return nil
+		})
 	}
 }
 

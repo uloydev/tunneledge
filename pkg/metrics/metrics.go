@@ -22,6 +22,10 @@ type Metrics struct {
 	TunnelCreated   *prometheus.CounterVec
 	TunnelDestroyed *prometheus.CounterVec
 	ReconnectTotal  prometheus.Counter
+	RelayDroppedFrames prometheus.Counter
+	RelayQueueTimeouts prometheus.Counter
+	RelayWriteTimeouts prometheus.Counter
+	RelayQueueDepth    prometheus.Histogram
 	Errors          *prometheus.CounterVec
 }
 
@@ -78,6 +82,31 @@ func New(namespace string) *Metrics {
 		Help:      "Total reconnection attempts",
 	})
 
+	m.RelayDroppedFrames = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "relay_dropped_frames_total",
+		Help:      "Total relay frames dropped during overload protection",
+	})
+
+	m.RelayQueueTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "relay_queue_timeouts_total",
+		Help:      "Total relay queue timeout events",
+	})
+
+	m.RelayWriteTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "relay_write_timeouts_total",
+		Help:      "Total relay write timeout events",
+	})
+
+	m.RelayQueueDepth = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: namespace,
+		Name:      "relay_queue_depth",
+		Help:      "Observed relay queue depth per completed stream",
+		Buckets:   []float64{1, 2, 4, 8, 16, 32},
+	})
+
 	m.Errors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "errors_total",
@@ -92,6 +121,10 @@ func New(namespace string) *Metrics {
 		m.TunnelCreated,
 		m.TunnelDestroyed,
 		m.ReconnectTotal,
+		m.RelayDroppedFrames,
+		m.RelayQueueTimeouts,
+		m.RelayWriteTimeouts,
+		m.RelayQueueDepth,
 		m.Errors,
 	)
 
@@ -113,6 +146,7 @@ type ReadinessCheck func() error
 type Server struct {
 	server *http.Server
 	addr   string
+	wg     sync.WaitGroup
 }
 
 func NewServer(addr string, m *Metrics, checks ...ReadinessCheck) *Server {
@@ -144,7 +178,9 @@ func NewServer(addr string, m *Metrics, checks ...ReadinessCheck) *Server {
 }
 
 func (s *Server) Start() {
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		log.Info().Str("addr", s.addr).Msg("starting metrics server")
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("metrics server error")
@@ -155,7 +191,9 @@ func (s *Server) Start() {
 func (s *Server) Stop(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	return s.server.Shutdown(shutdownCtx)
+	err := s.server.Shutdown(shutdownCtx)
+	s.wg.Wait()
+	return err
 }
 
 func initGlobal() {

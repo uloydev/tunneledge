@@ -102,7 +102,7 @@ func NewServer(opts ServerOptions) *Server {
 		fmt.Fprint(w, "ok")
 	})
 
-	handler := RequestIDMiddleware(CORSMiddleware(LoggingMiddleware(mux)))
+	handler := RequestIDMiddleware(TracingMiddleware(CORSMiddleware(LoggingMiddleware(mux))))
 
 	return &Server{
 		httpServer: &http.Server{
@@ -134,13 +134,9 @@ func requireCookie(secret string, next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (s *Server) Start() {
-	go func() {
-		log.Info().Str("addr", s.httpServer.Addr).Msg("starting dashboard server")
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error().Err(err).Msg("dashboard server error")
-		}
-	}()
+func (s *Server) Start() error {
+	log.Info().Str("addr", s.httpServer.Addr).Msg("starting dashboard server")
+	return s.httpServer.ListenAndServe()
 }
 
 func (s *Server) Stop(ctx context.Context) error {

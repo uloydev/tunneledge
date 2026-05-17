@@ -17,6 +17,45 @@ services:
     networks:
       - tunneledge
 
+  prometheus:
+    image: prom/prometheus:v2.53.4
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    depends_on:
+      registry:
+        condition: service_started
+      gateway:
+        condition: service_started
+      dashboard:
+        condition: service_started
+      agent:
+        condition: service_started
+    networks:
+      - tunneledge
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - tunneledge
+
   registry:
     build:
       context: ../..
@@ -28,8 +67,14 @@ services:
         condition: service_healthy
     environment:
       - TE_REGISTRY_GRPC_LISTEN_ADDR=:50051
+      - TE_REGISTRY_SESSION_TTL=5m
+      - TE_REGISTRY_CLEANUP_INTERVAL=30s
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
+      - TE_OBSERVABILITY_METRICS_ENABLED=true
+      - TE_OBSERVABILITY_METRICS_ADDR=:9090
+      - TE_OBSERVABILITY_TRACING_ENABLED=false
+      # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
@@ -62,6 +107,10 @@ services:
       - TE_LOG_FORMAT=json
       - TE_OBSERVABILITY_METRICS_ENABLED=true
       - TE_OBSERVABILITY_METRICS_ADDR=:9090
+      - TE_OBSERVABILITY_TRACING_ENABLED=false
+      # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
+      - TE_GATEWAY_SHUTDOWN_TIMEOUT=15s
+      - TE_GATEWAY_STREAM_IDLE_TIMEOUT=30s
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
@@ -110,6 +159,10 @@ services:
       - TE_DASHBOARD_SMTP_FROM=noreply@tunneledge.dev
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
+      - TE_OBSERVABILITY_METRICS_ENABLED=true
+      - TE_OBSERVABILITY_METRICS_ADDR=:9090
+      - TE_OBSERVABILITY_TRACING_ENABLED=false
+      # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
@@ -126,10 +179,18 @@ services:
     environment:
       - TE_LOG_LEVEL=info
       - TE_LOG_FORMAT=json
+      - TE_OBSERVABILITY_METRICS_ENABLED=true
+      - TE_OBSERVABILITY_METRICS_ADDR=:9090
+      - TE_OBSERVABILITY_TRACING_ENABLED=false
+      # - TE_OBSERVABILITY_TRACING_ENDPOINT=otel-collector:4317
+      - TE_AGENT_HEARTBEAT_INTERVAL=15s
+      - TE_AGENT_RECONNECT_DELAY=2s
+      - TE_AGENT_STREAM_IDLE_TIMEOUT=30s
     command:
       - headless
       - --gateway-addr=gateway:4433
       - --token=dev-token
+      - --metrics-addr=:9090
       # - --tunnel=web=echo:6666
       - --tunnel=api=http-echo:8080
     networks:
@@ -187,6 +248,7 @@ services:
 
 volumes:
   pgdata:
+  grafana-data:
 
 networks:
   tunneledge:

@@ -2,24 +2,33 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"tunneledge/internal/dashboard"
 	"tunneledge/internal/email"
 	"tunneledge/internal/store/pgstore"
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
+	"tunneledge/pkg/observability"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
 	cfg, err := config.Load(config.ServiceDashboard)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cfg.Validate(config.ServiceDashboard); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -29,13 +38,24 @@ func main() {
 	})
 	log.Logger = logr.Logger
 
+	traceShutdown := func(context.Context) error { return nil }
+	if cfg.Observability.TracingEnabled {
+		traceShutdown, err = observability.StartTracing(context.Background(), cfg.ServiceName, cfg.Observability.TracingEndpoint)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize tracing")
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := traceShutdown(shutdownCtx); err != nil {
+				log.Error().Err(err).Msg("failed to stop tracing")
+			}
+		}()
+	}
+
 	jwtCfg := dashboard.JWTConfig{
 		Secret: cfg.Dashboard.JWTSecret,
 		TTL:    cfg.Dashboard.JWTTTL,
-	}
-
-	if jwtCfg.Secret == "" {
-		log.Fatal().Msg("jwt_secret is required")
 	}
 
 	emailSvc := email.NewService(email.Config{
@@ -79,21 +99,34 @@ func main() {
 	}
 
 	srv := dashboard.NewServer(opts)
-	srv.Start()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		err := srv.Start()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	})
 
 	log.Info().
 		Str("service", "dashboard").
 		Str("addr", cfg.Dashboard.HTTPListenAddr).
 		Msg("dashboard started")
 
-	<-ctx.Done()
-	log.Info().Msg("shutting down dashboard")
+	select {
+	case <-ctx.Done():
+		log.Info().Msg("shutting down dashboard")
+	case <-gctx.Done():
+	}
 
 	if err := srv.Stop(context.Background()); err != nil {
 		log.Error().Err(err).Msg("failed to stop dashboard")
+	}
+	if err := g.Wait(); err != nil {
+		log.Fatal().Err(err).Msg("dashboard server error")
 	}
 
 	log.Info().Msg("dashboard stopped")

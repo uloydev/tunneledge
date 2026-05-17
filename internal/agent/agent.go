@@ -18,6 +18,10 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 type Agent struct {
@@ -136,10 +140,25 @@ func (a *Agent) telemetryLoop(ctx context.Context) {
 }
 
 func (a *Agent) Run(ctx context.Context) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	group, groupCtx := errgroup.WithContext(runCtx)
 	if a.eventCh != nil {
-		go a.telemetryLoop(ctx)
+		group.Go(func() error {
+			a.telemetryLoop(groupCtx)
+			return nil
+		})
 	}
 
+	err := a.runConnectLoop(groupCtx)
+	cancel()
+	_ = group.Wait()
+	return err
+}
+
+
+func (a *Agent) runConnectLoop(ctx context.Context) error {
 	attempts := 0
 	delay := a.reconnectDelay
 	maxRetries := a.maxReconnect
@@ -172,6 +191,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 
 		attempts++
+		if a.metrics != nil {
+			a.metrics.ReconnectTotal.Inc()
+		}
 		jitter := time.Duration(rand.Int64N(int64(delay) / 2))
 		waitTime := delay + jitter
 
@@ -194,7 +216,17 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
-func (a *Agent) connect(ctx context.Context) error {
+func (a *Agent) connect(ctx context.Context) (err error) {
+	ctx, span := otel.Tracer("tunneledge/agent").Start(ctx, "agent.connect",
+		trace.WithAttributes(attribute.String("gateway.addr", a.gatewayAddr)),
+	)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+		}
+		span.End()
+	}()
+
 	var tlsCfg *tls.Config
 
 	if a.tlsCAFile != "" {
@@ -215,12 +247,11 @@ func (a *Agent) connect(ctx context.Context) error {
 		return fmt.Errorf("failed to dial gateway: %w", err)
 	}
 
-	a.mu.Lock()
-	a.conn = conn
-	a.mu.Unlock()
+	a.setConn(conn)
 
 	log.Info().Str("gateway_addr", a.gatewayAddr).Msg("QUIC connection established")
 	defer func() {
+		a.setConn(nil)
 		conn.CloseWithError(0, "agent shutting down")
 		log.Info().Msg("QUIC connection closed")
 	}()
@@ -253,6 +284,12 @@ func (a *Agent) getConn() *quic.Conn {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.conn
+}
+
+func (a *Agent) setConn(conn *quic.Conn) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.conn = conn
 }
 
 func (a *Agent) authenticateV1(ctx context.Context, conn *quic.Conn, authStream *quic.Stream) error {
@@ -341,23 +378,39 @@ func (a *Agent) authenticateV2(ctx context.Context, conn *quic.Conn, authStream 
 }
 
 func (a *Agent) streamLoop(ctx context.Context, conn *quic.Conn) error {
-	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
-	go a.heartbeatLoop(heartbeatCtx)
-	defer heartbeatCancel()
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	g, groupCtx := errgroup.WithContext(streamCtx)
+	g.Go(func() error {
+		a.heartbeatLoop(groupCtx)
+		return nil
+	})
 
 	for {
 		select {
 		case <-ctx.Done():
+			cancel()
+			_ = g.Wait()
 			return ctx.Err()
 		default:
 		}
 
-		qstream, err := conn.AcceptStream(ctx)
+		qstream, err := conn.AcceptStream(groupCtx)
 		if err != nil {
+			cancel()
+			_ = g.Wait()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return fmt.Errorf("failed to accept stream: %w", err)
 		}
 
-		go a.handleStream(ctx, qstream)
+		stream := qstream
+		g.Go(func() error {
+			a.handleStream(groupCtx, stream)
+			return nil
+		})
 	}
 }
 
@@ -369,9 +422,17 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 	a.mu.RUnlock()
 
 	logger := log.With().Str("tunnel_id", tunnelID).Str("stream_id", streamID).Logger()
+	ctx, span := otel.Tracer("tunneledge/agent").Start(ctx, "agent.handle_stream",
+		trace.WithAttributes(
+			attribute.String("tunnel.id", tunnelID),
+			attribute.String("stream.id", streamID),
+		),
+	)
+	defer span.End()
 
 	label, err := transport.DecodeStreamLabel(qstream)
 	if err != nil {
+		span.RecordError(err)
 		logger.Error().Err(err).Msg("failed to read stream label")
 		qstream.Close()
 		return
@@ -379,10 +440,16 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 
 	localAddr, ok := a.tunnelMap[label]
 	if !ok {
+		err = fmt.Errorf("unknown tunnel label: %s", label)
+		span.RecordError(err)
 		logger.Error().Str("label", label).Msg("unknown tunnel label")
 		qstream.Close()
 		return
 	}
+	span.SetAttributes(
+		attribute.String("tunnel.label", label),
+		attribute.String("local.addr", localAddr),
+	)
 
 	logger = logger.With().Str("label", label).Str("local_addr", localAddr).Logger()
 	logger.Info().Msg("incoming stream from gateway")
@@ -395,6 +462,7 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 
 	tcpConn, err := net.DialTimeout("tcp", localAddr, 10*time.Second)
 	if err != nil {
+		span.RecordError(err)
 		logger.Error().Err(err).Msg("failed to connect to local service")
 		qstream.Close()
 		a.emitEvent(StreamClosedEvent{
@@ -422,6 +490,7 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 		}
 	})
 	if relayErr != nil {
+		span.RecordError(relayErr)
 		logger.Debug().Err(relayErr).Msg("relay ended with error")
 	}
 
@@ -429,6 +498,10 @@ func (a *Agent) handleStream(ctx context.Context, qstream *quic.Stream) {
 		a.metrics.ActiveStreams.Dec()
 		a.metrics.BytesForwarded.WithLabelValues("sent").Add(float64(result.Stats.GetSent()))
 		a.metrics.BytesForwarded.WithLabelValues("received").Add(float64(result.Stats.GetReceived()))
+		a.metrics.RelayDroppedFrames.Add(float64(result.Stats.GetDroppedFrames()))
+		a.metrics.RelayQueueTimeouts.Add(float64(result.Stats.GetQueueTimeouts()))
+		a.metrics.RelayWriteTimeouts.Add(float64(result.Stats.GetWriteTimeouts()))
+		a.metrics.RelayQueueDepth.Observe(float64(result.Stats.GetMaxQueueDepth()))
 	}
 
 	logger.Info().Int64("sent", result.Stats.GetSent()).Int64("received", result.Stats.GetReceived()).Msg("stream closed")

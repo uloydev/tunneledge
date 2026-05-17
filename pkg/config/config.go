@@ -207,6 +207,90 @@ func Load(svc ServiceType, opts ...Option) (*Config, error) {
 	return &cfg, nil
 }
 
+func (c *Config) Validate(svc ServiceType) error {
+	if c.Observability.MetricsEnabled && c.Observability.MetricsAddr == "" {
+		return fmt.Errorf("observability.metrics_addr is required when metrics are enabled")
+	}
+	if c.Observability.TracingEnabled && c.Observability.TracingEndpoint == "" {
+		return fmt.Errorf("observability.tracing_endpoint is required when tracing is enabled")
+	}
+	if c.DB.Driver == "postgres" && c.DB.DSN == "" {
+		return fmt.Errorf("db.dsn is required when db.driver=postgres")
+	}
+
+	switch svc {
+	case ServiceAgent:
+		if c.Agent.GatewayAddr == "" {
+			return fmt.Errorf("agent.gateway_addr is required")
+		}
+		if c.Agent.Token == "" {
+			return fmt.Errorf("agent.token is required")
+		}
+		if c.Agent.ReconnectDelay <= 0 {
+			return fmt.Errorf("agent.reconnect_delay must be greater than zero")
+		}
+		if c.Agent.HeartbeatInterval <= 0 {
+			return fmt.Errorf("agent.heartbeat_interval must be greater than zero")
+		}
+		if c.Agent.StreamIdleTimeout <= 0 {
+			return fmt.Errorf("agent.stream_idle_timeout must be greater than zero")
+		}
+		if c.Agent.MaxReconnect < 0 {
+			return fmt.Errorf("agent.max_reconnect cannot be negative")
+		}
+	case ServiceGateway:
+		if c.Gateway.QUICListenAddr == "" {
+			return fmt.Errorf("gateway.quic_listen_addr is required")
+		}
+		if c.Gateway.PublicListenAddr == "" {
+			return fmt.Errorf("gateway.public_listen_addr is required")
+		}
+		if c.Gateway.BaseDomain == "" {
+			return fmt.Errorf("gateway.base_domain is required")
+		}
+		if c.Gateway.RegistryAddr == "" {
+			return fmt.Errorf("gateway.registry_addr is required")
+		}
+		if c.Gateway.ShutdownTimeout <= 0 {
+			return fmt.Errorf("gateway.shutdown_timeout must be greater than zero")
+		}
+		if c.Gateway.StreamIdleTimeout <= 0 {
+			return fmt.Errorf("gateway.stream_idle_timeout must be greater than zero")
+		}
+		if c.Gateway.MaxStreams <= 0 {
+			return fmt.Errorf("gateway.max_streams must be greater than zero")
+		}
+	case ServiceRegistry:
+		if c.Registry.GRPCListenAddr == "" {
+			return fmt.Errorf("registry.grpc_listen_addr is required")
+		}
+		if c.Registry.SessionTTL <= 0 {
+			return fmt.Errorf("registry.session_ttl must be greater than zero")
+		}
+		if c.Registry.CleanupInterval <= 0 {
+			return fmt.Errorf("registry.cleanup_interval must be greater than zero")
+		}
+		if c.Registry.CleanupInterval >= c.Registry.SessionTTL {
+			return fmt.Errorf("registry.cleanup_interval must be less than registry.session_ttl")
+		}
+	case ServiceDashboard:
+		if c.Dashboard.HTTPListenAddr == "" {
+			return fmt.Errorf("dashboard.http_listen_addr is required")
+		}
+		if c.Dashboard.JWTSecret == "" {
+			return fmt.Errorf("dashboard.jwt_secret is required")
+		}
+		if c.Dashboard.JWTTTL <= 0 {
+			return fmt.Errorf("dashboard.jwt_ttl must be greater than zero")
+		}
+		if c.Dashboard.BaseURL == "" {
+			return fmt.Errorf("dashboard.base_url is required")
+		}
+	}
+
+	return nil
+}
+
 // SaveConfig is the serializable form of an agent config written to disk.
 // It uses the nested YAML structure that matches Config.
 type SaveConfig struct {

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"tunneledge/internal/domain"
@@ -17,6 +18,7 @@ type Server struct {
 
 	store         domain.SessionRepository
 	cleanupCancel context.CancelFunc
+	cleanupWG     sync.WaitGroup
 }
 
 func NewServer(store domain.SessionRepository, cleanupInterval, sessionTTL time.Duration) *Server {
@@ -25,7 +27,11 @@ func NewServer(store domain.SessionRepository, cleanupInterval, sessionTTL time.
 		store:         store,
 		cleanupCancel: cancel,
 	}
-	go s.cleanupLoop(ctx, cleanupInterval, sessionTTL)
+	s.cleanupWG.Add(1)
+	go func() {
+		defer s.cleanupWG.Done()
+		s.cleanupLoop(ctx, cleanupInterval, sessionTTL)
+	}()
 	return s
 }
 
@@ -33,6 +39,7 @@ func (s *Server) Stop() {
 	if s.cleanupCancel != nil {
 		s.cleanupCancel()
 	}
+	s.cleanupWG.Wait()
 }
 
 func (s *Server) RegisterTunnel(ctx context.Context, req *pb.RegisterTunnelRequest) (*pb.RegisterTunnelResponse, error) {

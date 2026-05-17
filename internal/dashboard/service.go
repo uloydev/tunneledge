@@ -11,6 +11,7 @@ import (
 	"tunneledge/internal/email"
 	"tunneledge/pkg/errs"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -81,7 +82,10 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*Register
 		return nil, errs.Wrap(errs.CodeAlreadyExists, "user already exists", err)
 	}
 
-	token := generateVerificationToken()
+	token, err := generateVerificationToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate verification token: %w", err)
+	}
 	verification := &domain.EmailVerification{
 		UserID:    user.ID,
 		Token:     token,
@@ -92,9 +96,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*Register
 	}
 
 	verifyURL := fmt.Sprintf("%s/verify?token=%s", s.baseURL, token)
-	if s.emailSvc != nil {
-		go func() { _ = s.emailSvc.SendVerification(user.Email, user.Name, verifyURL) }()
-	}
+	s.sendVerification(user.Email, user.Name, verifyURL)
 
 	return &RegisterOutput{Message: "registration successful, please check your email to verify your account"}, nil
 }
@@ -174,7 +176,11 @@ func (s *AuthService) ResendVerification(ctx context.Context, emailAddr string) 
 
 	_ = s.verifications.DeleteByUserID(ctx, user.ID)
 
-	token := generateVerificationToken()
+	token, err := generateVerificationToken()
+	if err != nil {
+		log.Warn().Err(err).Str("email", emailAddr).Msg("failed to generate verification token")
+		return
+	}
 	v := &domain.EmailVerification{
 		UserID:    user.ID,
 		Token:     token,
@@ -183,8 +189,15 @@ func (s *AuthService) ResendVerification(ctx context.Context, emailAddr string) 
 	_ = s.verifications.Create(ctx, v)
 
 	verifyURL := fmt.Sprintf("%s/verify?token=%s", s.baseURL, token)
-	if s.emailSvc != nil {
-		go func() { _ = s.emailSvc.SendVerification(user.Email, user.Name, verifyURL) }()
+	s.sendVerification(user.Email, user.Name, verifyURL)
+}
+
+func (s *AuthService) sendVerification(emailAddr, name, verifyURL string) {
+	if s.emailSvc == nil {
+		return
+	}
+	if err := s.emailSvc.SendVerification(emailAddr, name, verifyURL); err != nil {
+		log.Warn().Err(err).Str("email", emailAddr).Msg("failed to send verification email")
 	}
 }
 
@@ -220,7 +233,10 @@ func (s *AgentService) Create(ctx context.Context, userID uint, name, agentID st
 		return nil, err
 	}
 
-	rawToken := generateRawToken()
+	rawToken, err := generateRawToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(rawToken), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
@@ -290,7 +306,10 @@ func (s *AgentService) RotateToken(ctx context.Context, userID, agentID uint) (*
 		return nil, err
 	}
 
-	rawToken := generateRawToken()
+	rawToken, err := generateRawToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(rawToken), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
@@ -408,18 +427,18 @@ func (s *TunnelService) Delete(ctx context.Context, userID, agentID, tunnelID ui
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func generateVerificationToken() string {
+func generateVerificationToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand unavailable: " + err.Error())
+		return "", fmt.Errorf("crypto/rand unavailable: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
-func generateRawToken() string {
+func generateRawToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand unavailable: " + err.Error())
+		return "", fmt.Errorf("crypto/rand unavailable: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

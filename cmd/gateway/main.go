@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"tunneledge/internal/auth"
 	"tunneledge/internal/gateway"
@@ -14,6 +15,7 @@ import (
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
+	"tunneledge/pkg/observability"
 
 	"github.com/rs/zerolog/log"
 )
@@ -24,12 +26,31 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
 	}
+	if err := cfg.Validate(config.ServiceGateway); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
+		os.Exit(1)
+	}
 
 	logr := logger.New(logger.Config{
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
 	})
 	log.Logger = logr.Logger
+
+	traceShutdown := func(context.Context) error { return nil }
+	if cfg.Observability.TracingEnabled {
+		traceShutdown, err = observability.StartTracing(context.Background(), cfg.ServiceName, cfg.Observability.TracingEndpoint)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize tracing")
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := traceShutdown(shutdownCtx); err != nil {
+				log.Error().Err(err).Msg("failed to stop tracing")
+			}
+		}()
+	}
 
 	authenticator := resolveAuthenticator(cfg)
 
@@ -57,6 +78,7 @@ func main() {
 		TLSCertFile:       cfg.Gateway.TLSCertFile,
 		TLSKeyFile:        cfg.Gateway.TLSKeyFile,
 		MaxStreams:        cfg.Gateway.MaxStreams,
+		ShutdownTimeout:   cfg.Gateway.ShutdownTimeout,
 		StreamIdleTimeout: cfg.Gateway.StreamIdleTimeout,
 		Authenticator:     authenticator,
 		RegistryClient:    registryClient,

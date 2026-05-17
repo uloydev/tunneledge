@@ -4,7 +4,10 @@ import (
 	"context"
 	"time"
 
+	"tunneledge/pkg/observability"
+
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/keepalive"
@@ -29,8 +32,9 @@ func LoggingInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo
 	if err != nil {
 		event = log.Error().Err(err)
 	}
+	traceID, spanID := observability.TraceIDs(ctx)
 
-	event.Str("method", info.FullMethod).Str("peer", peerAddr).Dur("duration", duration).Str("code", code.String()).Msg("gRPC call")
+	event.Str("method", info.FullMethod).Str("peer", peerAddr).Dur("duration", duration).Str("code", code.String()).Str("trace_id", traceID).Str("span_id", spanID).Msg("gRPC call")
 
 	return resp, err
 }
@@ -62,6 +66,7 @@ func NewGRPCServer(authToken string) *grpc.Server {
 	}
 
 	return grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle: 5 * time.Minute,
 			Time:              30 * time.Second,

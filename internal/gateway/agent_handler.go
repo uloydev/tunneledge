@@ -10,21 +10,32 @@ import (
 
 	"tunneledge/internal/domain"
 	"tunneledge/internal/transport"
+	"tunneledge/pkg/observability"
 
 	"github.com/quic-go/quic-go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
-	logger := log.With().Str("remote_addr", remoteAddr).Logger()
+	ctx, span := otel.Tracer("tunneledge/gateway").Start(ctx, "gateway.handle_agent_connection",
+		trace.WithAttributes(attribute.String("remote.addr", remoteAddr)),
+	)
+	defer span.End()
+	traceID, spanID := observability.TraceIDs(ctx)
+	logger := log.With().Str("remote_addr", remoteAddr).Str("trace_id", traceID).Str("span_id", spanID).Logger()
 
 	acceptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	qstream, err := conn.AcceptStream(acceptCtx)
 	if err != nil {
+		span.RecordError(err)
 		logger.Error().Err(err).Msg("failed to accept initial stream")
 		conn.CloseWithError(1, "failed to accept auth stream")
 		return
@@ -33,6 +44,7 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	// First frame must be MsgHello for version negotiation.
 	helloType, err := transport.ReadMessageType(qstream)
 	if err != nil {
+		span.RecordError(err)
 		logger.Error().Err(err).Msg("failed to read hello message type")
 		conn.CloseWithError(1, "auth failed")
 		return
@@ -40,6 +52,7 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	if helloType == transport.MsgHello {
 		hello, hErr := transport.DecodeHello(qstream)
 		if hErr != nil {
+			span.RecordError(hErr)
 			logger.Error().Err(hErr).Msg("failed to decode hello frame")
 			conn.CloseWithError(1, "bad hello")
 			return
@@ -54,6 +67,7 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 		// Read the next message type (the actual auth frame).
 		helloType, err = transport.ReadMessageType(qstream)
 		if err != nil {
+			span.RecordError(err)
 			logger.Error().Err(err).Msg("failed to read auth message type after hello")
 			conn.CloseWithError(1, "auth failed")
 			return
@@ -81,11 +95,14 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	}
 
 	if err != nil {
+		span.RecordError(err)
 		conn.CloseWithError(1, "auth failed")
 		return
 	}
+	span.SetAttributes(attribute.String("tunnel.id", tunnelID), attribute.String("agent.id", agentID))
 
 	if err := g.registryClient.RegisterTunnel(tunnelID, agentID, publicAddr, localAddr); err != nil {
+		span.RecordError(err)
 		logger.Error().Err(err).Msg("failed to register tunnel with registry")
 		conn.CloseWithError(1, "registry error")
 		return
@@ -98,8 +115,21 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 
 	logger.Info().Str("tunnel_id", tunnelID).Msg("tunnel established")
 
-	go g.heartbeatLoop(ctx, tunnelID)
-	g.agentStreamLoop(ctx, conn, tunnelID)
+	tunnelCtx, tunnelCancel := context.WithCancel(ctx)
+	defer tunnelCancel()
+
+	group, groupCtx := errgroup.WithContext(tunnelCtx)
+	group.Go(func() error {
+		g.heartbeatLoop(groupCtx, tunnelID)
+		return nil
+	})
+	group.Go(func() error {
+		defer tunnelCancel()
+		g.agentStreamLoop(groupCtx, conn, tunnelID)
+		return nil
+	})
+
+	_ = group.Wait()
 }
 
 func (g *Gateway) handleV1Auth(r io.Reader, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (agentID, tunnelID, publicAddr, localAddr string, err error) {
@@ -233,8 +263,14 @@ func (g *Gateway) agentStreamLoop(ctx context.Context, conn *quic.Conn, tunnelID
 		switch msgType {
 		case transport.MsgHeartbeat:
 			log.Debug().Str("tunnel_id", tunnelID).Msg("heartbeat received from agent")
-			if err := g.registryClient.Heartbeat(tunnelID); err != nil {
+			alive, err := g.registryClient.Heartbeat(tunnelID)
+			if err != nil {
 				log.Warn().Err(err).Str("tunnel_id", tunnelID).Msg("heartbeat registry update failed")
+			} else if !alive {
+				log.Warn().Str("tunnel_id", tunnelID).Msg("registry heartbeat reported expired session")
+				g.removeTunnel(tunnelID, "session_expired")
+				s.Close()
+				return
 			}
 			s.Close()
 		default:
@@ -254,8 +290,15 @@ func (g *Gateway) heartbeatLoop(ctx context.Context, tunnelID string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := g.registryClient.Heartbeat(tunnelID); err != nil {
+			alive, err := g.registryClient.Heartbeat(tunnelID)
+			if err != nil {
 				log.Warn().Err(err).Str("tunnel_id", tunnelID).Msg("heartbeat failed")
+				continue
+			}
+			if !alive {
+				log.Warn().Str("tunnel_id", tunnelID).Msg("registry heartbeat reported expired session")
+				g.removeTunnel(tunnelID, "session_expired")
+				return
 			}
 		}
 	}

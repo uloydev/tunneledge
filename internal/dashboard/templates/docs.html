@@ -170,7 +170,7 @@
 
       <!-- Quick Start -->
       <h2 id="quick-start">Quick Start</h2>
-      <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, gateway, dashboard, and Mailpit for email — starts with one command.</p>
+      <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, gateway, dashboard, Mailpit for email, Prometheus for metrics, and Grafana for dashboards — starts with one command.</p>
 
       <h3>Prerequisites</h3>
       <ul>
@@ -187,7 +187,7 @@
       </div>
 
       <h3>2. Register an account</h3>
-      <p>Open <code>http://localhost:8082</code>, create an account, and verify your email via Mailpit at <code>http://localhost:18025</code>.</p>
+      <p>Open <code>http://localhost:8082</code>, create an account, and verify your email via Mailpit at <code>http://localhost:18025</code>. Grafana is available at <code>http://localhost:3001</code> with the default dev credentials <code>admin</code> / <code>admin</code>.</p>
 
       <h3>3. Create an agent</h3>
       <p>In the dashboard go to <strong>Agents → New agent</strong>. Copy the token shown — it is displayed only once.</p>
@@ -215,8 +215,10 @@
       <ul>
         <li><strong>postgres</strong> — PostgreSQL 16 (persistent volume <code>pgdata</code>)</li>
         <li><strong>registry</strong> — gRPC session registry on port <code>50051</code></li>
-        <li><strong>gateway</strong> — QUIC agent listener <code>:4433/udp</code>, public TLS <code>:443/tcp</code>, metrics <code>:9090</code></li>
+        <li><strong>gateway</strong> — QUIC agent listener <code>:4433/udp</code>, public TLS <code>:443/tcp</code>, metrics <code>:9090</code>, optional OTLP trace export</li>
         <li><strong>dashboard</strong> — HTTP API + HTMX web UI on <code>:8080</code> (mapped to <code>8082</code> in dev)</li>
+        <li><strong>prometheus</strong> — Metrics UI on <code>:9091</code>, scraping registry, gateway, dashboard, and agent endpoints by default</li>
+        <li><strong>grafana</strong> — Dashboard UI on <code>:3001</code>, provisioned with the Prometheus datasource and a TunnelEdge overview dashboard</li>
         <li><strong>mailpit</strong> — Dev SMTP server; web UI on <code>:18025</code></li>
         <li><strong>http-echo</strong> — Sample echo service for testing tunnels</li>
       </ul>
@@ -258,7 +260,7 @@
         <li><code>TunnelRouter</code> maps hostname → tunnel ID (in-memory, populated by registry)</li>
         <li>Gateway opens a new QUIC stream to the agent holding that tunnel</li>
         <li>Agent accepts the stream, dials the local TCP service</li>
-        <li>Bidirectional relay begins — data flows transparently at wire speed</li>
+        <li>Bidirectional relay begins through a bounded queue pipeline with pooled buffers, write deadlines, and overload rejection for slow consumers</li>
       </ul>
 
       <h3>Stream multiplexing</h3>
@@ -317,6 +319,12 @@
   <span class="sh-key">level</span>:  <span class="sh-val">info</span>
   <span class="sh-key">format</span>: <span class="sh-val">json</span>
 
+<span class="sh-section">observability</span>:
+  <span class="sh-key">metrics_enabled</span>:  <span class="sh-val">true</span>
+  <span class="sh-key">metrics_addr</span>:     <span class="sh-val">:9090</span>
+  <span class="sh-key">tracing_enabled</span>:  <span class="sh-val">false</span>
+  <span class="sh-key">tracing_endpoint</span>: <span class="sh-val">localhost:4317</span>
+
 <span class="sh-section">gateway</span>:
   <span class="sh-key">quic_listen_addr</span>:   <span class="sh-val">:4433</span>
   <span class="sh-key">public_listen_addr</span>: <span class="sh-val">:443</span>
@@ -324,6 +332,8 @@
   <span class="sh-key">registry_addr</span>:      <span class="sh-val">localhost:50051</span>
   <span class="sh-key">tls_cert_file</span>:      <span class="sh-val">certs/server.crt</span>
   <span class="sh-key">tls_key_file</span>:       <span class="sh-val">certs/server.key</span>
+  <span class="sh-key">shutdown_timeout</span>:   <span class="sh-val">15s</span>
+  <span class="sh-key">stream_idle_timeout</span>: <span class="sh-val">30s</span>
 
 <span class="sh-section">db</span>:
   <span class="sh-key">driver</span>: <span class="sh-val">postgres</span>
@@ -332,12 +342,19 @@
 
       <div class="code-block mb-4">
         <pre><span class="sh-comment"># config/agent.yaml</span>
+<span class="sh-section">observability</span>:
+  <span class="sh-key">metrics_enabled</span>:  <span class="sh-val">true</span>
+  <span class="sh-key">metrics_addr</span>:     <span class="sh-val">:9092</span>
+  <span class="sh-key">tracing_enabled</span>:  <span class="sh-val">false</span>
+  <span class="sh-key">tracing_endpoint</span>: <span class="sh-val">localhost:4317</span>
+
 <span class="sh-section">agent</span>:
   <span class="sh-key">gateway_addr</span>:        <span class="sh-val">gateway.example.com:4433</span>
   <span class="sh-key">token</span>:               <span class="sh-val">te_xxxxxxxxxxxxxxxx</span>
   <span class="sh-key">reconnect_delay</span>:     <span class="sh-val">2s</span>
   <span class="sh-key">max_reconnect</span>:       <span class="sh-val">0</span>          <span class="sh-comment"># 0 = unlimited</span>
   <span class="sh-key">heartbeat_interval</span>:  <span class="sh-val">15s</span>
+  <span class="sh-key">stream_idle_timeout</span>: <span class="sh-val">30s</span>
   <span class="sh-key">tls_insecure</span>:        <span class="sh-val">false</span>
   <span class="sh-key">tunnels</span>:
     - <span class="sh-key">label</span>:      <span class="sh-val">web</span>
@@ -359,6 +376,8 @@
             <tr><td>TE_LOG_FORMAT</td><td>json</td><td>json · console</td></tr>
             <tr><td>TE_OBSERVABILITY_METRICS_ENABLED</td><td>true</td><td>Expose Prometheus metrics endpoint</td></tr>
             <tr><td>TE_OBSERVABILITY_METRICS_ADDR</td><td>:9090</td><td>Metrics server listen address</td></tr>
+            <tr><td>TE_OBSERVABILITY_TRACING_ENABLED</td><td>false</td><td>Enable OpenTelemetry tracing</td></tr>
+            <tr><td>TE_OBSERVABILITY_TRACING_ENDPOINT</td><td>localhost:4317</td><td>OTLP gRPC endpoint for traces</td></tr>
             <tr><td>TE_DB_DRIVER</td><td>memory</td><td>postgres · memory</td></tr>
             <tr><td>TE_DB_DSN</td><td>—</td><td>PostgreSQL connection string</td></tr>
             <tr><td>TE_DB_MAX_OPEN_CONNS</td><td>10</td><td>Max open DB connections</td></tr>
@@ -366,6 +385,7 @@
           </tbody>
         </table>
       </div>
+      <p class="text-sm text-slate-400 mb-6">Startup now validates required secrets, timeout bounds, and service-specific config dependencies before the listeners begin accepting traffic.</p>
 
       <h3>Gateway</h3>
       <div class="glass rounded-xl overflow-hidden mb-6">
@@ -381,6 +401,8 @@
             <tr><td>TE_GATEWAY_REGISTRY_TLS_CERT</td><td>insecure</td><td>Registry gRPC CA cert path; "insecure" skips verification</td></tr>
             <tr><td>TE_GATEWAY_GRPC_AUTH_TOKEN</td><td>—</td><td>Bearer token for registry gRPC calls</td></tr>
             <tr><td>TE_GATEWAY_MAX_STREAMS</td><td>1000</td><td>Max concurrent QUIC streams per connection</td></tr>
+            <tr><td>TE_GATEWAY_SHUTDOWN_TIMEOUT</td><td>15s</td><td>Drain timeout before force-closing active streams</td></tr>
+            <tr><td>TE_GATEWAY_STREAM_IDLE_TIMEOUT</td><td>30s</td><td>Idle timeout for relayed public streams</td></tr>
           </tbody>
         </table>
       </div>
@@ -392,7 +414,7 @@
           <tbody>
             <tr><td>TE_REGISTRY_GRPC_LISTEN_ADDR</td><td>:50051</td><td>gRPC listen address</td></tr>
             <tr><td>TE_REGISTRY_SESSION_TTL</td><td>5m</td><td>Inactive session expiry</td></tr>
-            <tr><td>TE_REGISTRY_CLEANUP_INTERVAL</td><td>1m</td><td>Session cleanup loop interval</td></tr>
+            <tr><td>TE_REGISTRY_CLEANUP_INTERVAL</td><td>30s</td><td>Session cleanup loop interval</td></tr>
             <tr><td>TE_REGISTRY_TLS_CERT_FILE</td><td>—</td><td>gRPC TLS certificate PEM path</td></tr>
             <tr><td>TE_REGISTRY_TLS_KEY_FILE</td><td>—</td><td>gRPC TLS private key PEM path</td></tr>
             <tr><td>TE_REGISTRY_GRPC_AUTH_TOKEN</td><td>—</td><td>Expected bearer token from gateway</td></tr>
@@ -426,6 +448,7 @@
             <tr><td>TE_AGENT_RECONNECT_DELAY</td><td>2s</td><td>Initial reconnect backoff</td></tr>
             <tr><td>TE_AGENT_MAX_RECONNECT</td><td>0</td><td>Max reconnect attempts (0 = unlimited)</td></tr>
             <tr><td>TE_AGENT_HEARTBEAT_INTERVAL</td><td>15s</td><td>Heartbeat send interval</td></tr>
+            <tr><td>TE_AGENT_STREAM_IDLE_TIMEOUT</td><td>30s</td><td>Idle timeout for relayed agent streams</td></tr>
             <tr><td>TE_AGENT_TLS_INSECURE</td><td>false</td><td>Skip TLS cert verification (dev only)</td></tr>
             <tr><td>TE_AGENT_TLS_CA_FILE</td><td>—</td><td>Custom CA PEM for gateway TLS</td></tr>
           </tbody>

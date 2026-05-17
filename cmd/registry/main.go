@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"tunneledge/internal/domain"
 	"tunneledge/internal/registry"
@@ -15,9 +16,11 @@ import (
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
+	"tunneledge/pkg/observability"
 	pb "tunneledge/proto/registry/v1"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -26,12 +29,31 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
 	}
+	if err := cfg.Validate(config.ServiceRegistry); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
+		os.Exit(1)
+	}
 
 	logr := logger.New(logger.Config{
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
 	})
 	log.Logger = logr.Logger
+
+	traceShutdown := func(context.Context) error { return nil }
+	if cfg.Observability.TracingEnabled {
+		traceShutdown, err = observability.StartTracing(context.Background(), cfg.ServiceName, cfg.Observability.TracingEndpoint)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize tracing")
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := traceShutdown(shutdownCtx); err != nil {
+				log.Error().Err(err).Msg("failed to stop tracing")
+			}
+		}()
+	}
 
 	sessStore := resolveSessionStore(cfg)
 
@@ -62,17 +84,24 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	go func() {
-		if err := grpcSrv.Serve(lis); err != nil {
-			log.Error().Err(err).Msg("gRPC server error")
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		if err := grpcSrv.Serve(lis); err != nil && gctx.Err() == nil {
+			return err
 		}
-	}()
+		return nil
+	})
 
-	<-ctx.Done()
-	log.Info().Msg("shutting down registry")
+	select {
+	case <-ctx.Done():
+		log.Info().Msg("shutting down registry")
+	case <-gctx.Done():
+	}
 
 	grpcSrv.GracefulStop()
+	if err := g.Wait(); err != nil {
+		log.Fatal().Err(err).Msg("gRPC server error")
+	}
 
 	if metricsSrv != nil {
 		if err := metricsSrv.Stop(context.Background()); err != nil {

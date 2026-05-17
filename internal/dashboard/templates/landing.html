@@ -272,7 +272,7 @@
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> No open firewall ports</div>
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Sub-100ms connection setup</div>
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> TLS end-to-end</div>
-        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Self-hostable</div>
+        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Backpressure-safe relay</div>
       </div>
     </div>
   </section>
@@ -295,7 +295,7 @@
             <svg class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">QUIC Transport</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Built on HTTP/3's transport layer. Multiplexed streams, 0-RTT reconnection, and zero head-of-line blocking across all your tunnels.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Built on HTTP/3's transport layer. Multiplexed streams, jittered reconnects, and zero head-of-line blocking across all your tunnels.</p>
         </div>
 
         <!-- Feature 2 -->
@@ -303,8 +303,8 @@
           <div class="w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mb-5">
             <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
           </div>
-          <h3 class="text-base font-bold text-white mb-2">Secure by Default</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Mutual TLS with auto-provisioned wildcard certificates. Every agent authenticates with bcrypt-hashed tokens. Nothing in plaintext, ever.</p>
+          <h3 class="text-base font-bold text-white mb-2">Operationally Hardened</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">Lifecycle-managed workers, bounded relay queues, hashed agent tokens, and fail-fast startup validation keep slow consumers and bad config from taking the stack down.</p>
         </div>
 
         <!-- Feature 3 -->
@@ -322,7 +322,7 @@
             <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">Live Dashboard</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Real-time session monitoring via Server-Sent Events. See active connections, bandwidth telemetry, and connection status without refreshing.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Real-time session monitoring via Server-Sent Events, plus request correlation and trace-aware logs so you can follow a tunnel from browser to registry.</p>
         </div>
 
         <!-- Feature 5 -->
@@ -331,7 +331,7 @@
             <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">Self-Hosted First</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Your data, your keys, your infrastructure. No SaaS lock-in.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus metrics, a provisioned Grafana dashboard, shutdown limits, registry cleanup windows, and optional OTLP tracing are all exposed as first-class runtime settings.</p>
         </div>
 
         <!-- Feature 6 -->
@@ -366,7 +366,7 @@
             <div class="shrink-0 w-10 h-10 rounded-full bg-brand-500/10 border border-brand-500/30 text-brand-400 font-bold font-mono flex items-center justify-center text-sm">1</div>
             <div>
               <h3 class="font-bold text-white text-base mb-2">Deploy the gateway</h3>
-              <p class="text-sm text-slate-400 mb-4">Spin up registry + gateway + dashboard with a single Docker Compose command on any server.</p>
+              <p class="text-sm text-slate-400 mb-4">Spin up registry + gateway + dashboard with a single Docker Compose command, with Prometheus scraping, Grafana dashboards, and optional tracing knobs already wired into the stack.</p>
               <div class="glass rounded-xl overflow-hidden">
                 <div class="flex items-center gap-2 px-4 py-2 border-b border-white/5 bg-white/[.02]">
                   <span class="text-xs text-slate-500 font-mono">shell</span>

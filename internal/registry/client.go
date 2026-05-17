@@ -10,6 +10,7 @@ import (
 
 	pb "tunneledge/proto/registry/v1"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -76,7 +77,7 @@ func NewGRPCRegistryClientWithOptions(addr string, opts ClientOptions) (*GRPCReg
 		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
 
-	dialOpts := []grpc.DialOption{transportCreds}
+	dialOpts := []grpc.DialOption{transportCreds, grpc.WithStatsHandler(otelgrpc.NewClientHandler())}
 
 	if opts.AuthToken != "" {
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(tokenCredentials{
@@ -126,12 +127,15 @@ func (c *GRPCRegistryClient) DeregisterTunnel(tunnelID string) error {
 	return err
 }
 
-func (c *GRPCRegistryClient) Heartbeat(tunnelID string) error {
+func (c *GRPCRegistryClient) Heartbeat(tunnelID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := c.client.Heartbeat(ctx, &pb.HeartbeatRequest{
+	resp, err := c.client.Heartbeat(ctx, &pb.HeartbeatRequest{
 		TunnelId: tunnelID,
 	})
-	return err
+	if err != nil {
+		return false, err
+	}
+	return resp.GetAlive(), nil
 }

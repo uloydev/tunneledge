@@ -11,8 +11,15 @@ import (
 	"sync"
 	"time"
 
+	"tunneledge/pkg/observability"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 )
 
@@ -181,6 +188,8 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 		evt.
 			Str("request_id", RequestIDFromContext(r.Context())).
+			Str("trace_id", traceIDFromContext(r.Context())).
+			Str("span_id", spanIDFromContext(r.Context())).
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
 			Str("remote_addr", r.RemoteAddr).
@@ -188,6 +197,37 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 			Dur("duration", dur).
 			Msg("http request")
 	})
+}
+
+func TracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := otel.Tracer("tunneledge/dashboard").Start(ctx, r.Method+" "+r.URL.Path,
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("http.method", r.Method),
+				attribute.String("http.path", r.URL.Path),
+				attribute.String("request.id", RequestIDFromContext(r.Context())),
+			),
+		)
+		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(wrapped, r.WithContext(ctx))
+		span.SetAttributes(attribute.Int("http.status_code", wrapped.status))
+		if wrapped.status >= http.StatusInternalServerError {
+			span.SetStatus(otelcodes.Error, http.StatusText(wrapped.status))
+		}
+		span.End()
+	})
+}
+
+func traceIDFromContext(ctx context.Context) string {
+	traceID, _ := observability.TraceIDs(ctx)
+	return traceID
+}
+
+func spanIDFromContext(ctx context.Context) string {
+	_, spanID := observability.TraceIDs(ctx)
+	return spanID
 }
 
 func CORSMiddleware(next http.Handler) http.Handler {

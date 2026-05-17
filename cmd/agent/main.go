@@ -14,6 +14,7 @@ import (
 	"tunneledge/pkg/config"
 	"tunneledge/pkg/logger"
 	"tunneledge/pkg/metrics"
+	"tunneledge/pkg/observability"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rs/zerolog/log"
@@ -117,6 +118,9 @@ func loadConfig() (*config.Config, error) {
 	if flagMetricsAddr != "" {
 		cfg.Observability.MetricsAddr = flagMetricsAddr
 	}
+	if err := cfg.Validate(config.ServiceAgent); err != nil {
+		return nil, fmt.Errorf("invalid agent config: %w", err)
+	}
 
 	return cfg, nil
 }
@@ -154,6 +158,19 @@ func runTUI() error {
 	// text leaks to the terminal while the alt-screen is active.
 	logr := logger.New(logger.Config{Level: cfg.Log.Level, Format: "json"})
 	log.Logger = logr.Output(agentui.NewEventLogWriter(uiEvents))
+
+	traceShutdown := func(context.Context) error { return nil }
+	if cfg.Observability.TracingEnabled {
+		traceShutdown, err = observability.StartTracing(context.Background(), cfg.ServiceName, cfg.Observability.TracingEndpoint)
+		if err != nil {
+			return fmt.Errorf("init tracing: %w", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = traceShutdown(shutdownCtx)
+		}()
+	}
 
 	// Optional metrics server (runs independently of the TUI).
 	var metricsSrv *metrics.Server
@@ -227,6 +244,19 @@ func runHeadless(cmd *cobra.Command, args []string) error {
 		Format: cfg.Log.Format,
 	})
 	log.Logger = logr.Logger
+
+	traceShutdown := func(context.Context) error { return nil }
+	if cfg.Observability.TracingEnabled {
+		traceShutdown, err = observability.StartTracing(context.Background(), cfg.ServiceName, cfg.Observability.TracingEndpoint)
+		if err != nil {
+			return fmt.Errorf("init tracing: %w", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = traceShutdown(shutdownCtx)
+		}()
+	}
 
 	log.Info().
 		Str("service", cfg.ServiceName).

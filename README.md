@@ -17,9 +17,12 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 - **Protocol Versioning** — `MsgHello` handshake frame carries `ProtocolVersion`; gateway rejects incompatible clients early
 - **Web Dashboard** — HTMX + SSE dashboard for managing agents and tunnels
 - **Rate Limiting** — Per-IP token-bucket rate limit on auth endpoints
-- **Request Tracing** — `X-Request-ID` header on every HTTP response; logged with each request
-- **Structured Logging** — JSON logs with tunnel IDs, stream IDs, request IDs, and correlation context
-- **Prometheus Metrics** — Active tunnels, streams, bytes forwarded, reconnect counts, error rates
+- **Bounded Relay Backpressure** — Bounded relay queues, pooled buffers, write timeouts, and overload rejection for slow consumers
+- **Request Correlation & Tracing** — `X-Request-ID` on HTTP responses plus OpenTelemetry spans across dashboard HTTP and registry gRPC paths
+- **Structured Logging** — JSON logs with tunnel IDs, stream IDs, request IDs, trace IDs, and correlation context
+- **Prometheus Metrics** — Active tunnels, streams, bytes forwarded, reconnect counts, relay queue pressure, dropped frames, and error rates, with a default scrape target in Docker Compose
+- **Grafana Dashboards** — Pre-provisioned Grafana with a ready-to-use Prometheus datasource and a starter operations dashboard in Docker Compose
+- **Fail-Fast Config Validation** — Startup rejects invalid secrets, timeout combinations, and impossible runtime settings before the services begin accepting traffic
 - **Graceful Shutdown** — Proper SIGTERM handling with active stream cleanup
 - **Docker Compose** — Full stack deployment with one command
 
@@ -121,14 +124,14 @@ A single QUIC connection between agent and gateway supports **multiple concurren
 3. `TunnelRouter` resolves hostname → tunnel ID
 4. Gateway opens QUIC stream to agent
 5. Agent accepts stream, dials local TCP service
-6. Bidirectional relay begins (`io.Copy` in errgroup)
+6. Bidirectional relay begins through a bounded queue pipeline with pooled buffers and backpressure timeouts
 
 ### Reconnect Flow
 1. QUIC connection lost (network error, heartbeat timeout)
-2. Session cleaned up on gateway side
+2. Gateway and registry heartbeat state detect the disconnect and expire stale sessions
 3. Agent retries with exponential backoff (2s → 4s → 8s → ... → 30s max)
 4. Jitter added to prevent thundering herd
-5. Tunnel re-registered on successful reconnect
+5. Expired registry leases are treated as disconnect signals; the tunnel is re-registered on successful reconnect
 
 ---
 
@@ -244,7 +247,13 @@ This starts:
 - **Registry** on port 50051
 - **Gateway** on UDP port 4433 (QUIC) and TCP port 443 (public TLS with SNI routing)
 - **Agent** connecting gateway → local echo service
+- **Prometheus** on port 9091 scraping registry, gateway, dashboard, and agent metrics
+- **Grafana** on port 3001 with a provisioned Prometheus datasource and TunnelEdge overview dashboard
 - **Echo service** (socat) on port 6666
+
+Prometheus is the default metrics backend in the deployment stack because it fits the current implementation best: the services already expose useful low-cardinality metrics for relay pressure, reconnects, streams, and tunnel lifecycle. Grafana sits on top of that default stack to provide a ready-to-use dashboard without requiring you to hand-wire datasources after startup.
+
+Grafana is available at `http://localhost:3001` with the default dev credentials `admin` / `admin`.
 
 ### Environment Variables
 
@@ -256,6 +265,8 @@ All services use the `TE_` prefix:
 | `TE_LOG_FORMAT` | `json` | Log format: json, console |
 | `TE_OBSERVABILITY_METRICS_ENABLED` | `true` | Enable Prometheus metrics |
 | `TE_OBSERVABILITY_METRICS_ADDR` | `:9090` | Metrics server address |
+| `TE_OBSERVABILITY_TRACING_ENABLED` | `false` | Enable OpenTelemetry tracing |
+| `TE_OBSERVABILITY_TRACING_ENDPOINT` | `localhost:4317` | OTLP gRPC endpoint for traces |
 | `TE_DB_DRIVER` | `memory` | Database driver: postgres, memory |
 | `TE_DB_DSN` | — | PostgreSQL DSN |
 | `TE_DB_AUTO_MIGRATE` | `true` | Auto-run schema migrations |
@@ -263,8 +274,11 @@ All services use the `TE_` prefix:
 | `TE_GATEWAY_PUBLIC_LISTEN_ADDR` | `:443` | Public TLS listen address (gateway, SNI routing) |
 | `TE_GATEWAY_BASE_DOMAIN` | `tunneledge.dev` | Base domain for tunnel subdomains (gateway) |
 | `TE_GATEWAY_REGISTRY_ADDR` | `localhost:50051` | Registry gRPC address (gateway) |
+| `TE_GATEWAY_SHUTDOWN_TIMEOUT` | `15s` | Drain timeout before force-closing streams during shutdown |
+| `TE_GATEWAY_STREAM_IDLE_TIMEOUT` | `30s` | Idle timeout applied to relayed public streams |
 | `TE_REGISTRY_GRPC_LISTEN_ADDR` | `:50051` | gRPC listen address (registry) |
 | `TE_REGISTRY_SESSION_TTL` | `5m` | Session TTL (registry) |
+| `TE_REGISTRY_CLEANUP_INTERVAL` | `30s` | Interval for expiring stale registry sessions |
 | `TE_DASHBOARD_HTTP_LISTEN_ADDR` | `:8080` | HTTP listen address (dashboard) |
 | `TE_DASHBOARD_JWT_SECRET` | — | JWT signing secret (dashboard) |
 | `TE_DASHBOARD_JWT_TTL` | `24h` | JWT expiry duration (dashboard) |
@@ -273,7 +287,11 @@ All services use the `TE_` prefix:
 | `TE_DASHBOARD_SMTP_PORT` | `1025` | SMTP server port |
 | `TE_DASHBOARD_SMTP_FROM` | `noreply@tunneledge.dev` | Sender address for verification emails |
 | `TE_AGENT_GATEWAY_ADDR` | `localhost:4433` | Gateway QUIC address (agent) |
+| `TE_AGENT_TOKEN` | — | Agent authentication token |
 | `TE_AGENT_RECONNECT_DELAY` | `2s` | Initial reconnect delay (agent) |
+| `TE_AGENT_MAX_RECONNECT` | `0` | Max reconnect attempts, `0` = unlimited |
+| `TE_AGENT_HEARTBEAT_INTERVAL` | `15s` | Heartbeat interval for registry lease renewal |
+| `TE_AGENT_STREAM_IDLE_TIMEOUT` | `30s` | Idle timeout applied to relayed agent streams |
 
 ---
 
@@ -294,8 +312,7 @@ All services use the `TE_` prefix:
 
 - UDP forwarding support
 - HTTP tunnel mode with request inspection
-- OpenTelemetry distributed tracing (endpoint wired, SDK not yet integrated)
-- Metrics UI (Grafana dashboards)
+- Trace dashboards and exemplars (Grafana Tempo / Jaeger integration)
 - Kubernetes deployment (Helm charts)
 - Let's Encrypt / ACME auto-cert for wildcard domains
 - Multi-region routing with anycast
