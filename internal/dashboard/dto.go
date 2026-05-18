@@ -74,21 +74,24 @@ type TunnelACLResponse struct {
 // Tunnel DTOs
 
 type CreateTunnelRequest struct {
-	Label     string `json:"label"`
-	LocalAddr string `json:"local_addr"`
+	Label      string `json:"label"`
+	LocalAddr  string `json:"local_addr"`
+	TunnelType string `json:"tunnel_type"` // "tcp" (default) or "udp"
 }
 
 type UpdateTunnelRequest struct {
-	Label     string `json:"label"`
-	LocalAddr string `json:"local_addr"`
+	Label      string `json:"label"`
+	LocalAddr  string `json:"local_addr"`
+	TunnelType string `json:"tunnel_type"`
 }
 
 type TunnelResponse struct {
-	ID        uint      `json:"id"`
-	Label     string    `json:"label"`
-	LocalAddr string    `json:"local_addr"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         uint      `json:"id"`
+	Label      string    `json:"label"`
+	LocalAddr  string    `json:"local_addr"`
+	TunnelType string    `json:"tunnel_type"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // Status DTOs

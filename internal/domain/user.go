@@ -62,6 +62,7 @@ type TunnelConfig struct {
 	AgentProfileID uint
 	Label          string
 	LocalAddr      string
+	TunnelType     string // "tcp" (default) or "udp"
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

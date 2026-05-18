@@ -142,6 +142,11 @@ services:
       # Phase 3: mTLS (mount certs volume)
       # - TE_GATEWAY_MTLS_ENABLED=true
       # - TE_GATEWAY_CLIENT_CA_FILE=/certs/ca.crt
+      # Phase 4: region routing, session resume, UDP tunnels
+      - TE_GATEWAY_REGION=us-east-1
+      # - TE_GATEWAY_SESSION_RESUME_ENABLED=true
+      # - TE_GATEWAY_SESSION_RESUME_TTL=30s
+      # - TE_GATEWAY_UDP_LISTEN_ADDR=:4435
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
       interval: 10s
@@ -181,15 +186,12 @@ services:
       - TE_DB_DRIVER=postgres
       - TE_DB_DSN=host=postgres port=5432 user=tunneledge password=tunneledge dbname=tunneledge sslmode=disable
       - TE_DB_AUTO_MIGRATE=true
+      # Phase 4: region routing, session resume, UDP tunnels
+      - TE_GATEWAY_REGION=us-west-1
+      # - TE_GATEWAY_SESSION_RESUME_ENABLED=true
+      # - TE_GATEWAY_SESSION_RESUME_TTL=30s
+      # - TE_GATEWAY_UDP_LISTEN_ADDR=:4435
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - tunneledge
-
-  edge:
     image: nginx:1.27-alpine
     ports:
       - "5443:443"
@@ -273,6 +275,9 @@ services:
       - TE_AGENT_HEARTBEAT_INTERVAL=15s
       - TE_AGENT_RECONNECT_DELAY=2s
       - TE_AGENT_STREAM_IDLE_TIMEOUT=30s
+      # Phase 4: region routing and session resume
+      # - TE_AGENT_PREFERRED_REGION=us-east-1
+      # - TE_AGENT_SESSION_RESUME_ENABLED=true
     command:
       - headless
       - --gateway-addrs=gateway:4433

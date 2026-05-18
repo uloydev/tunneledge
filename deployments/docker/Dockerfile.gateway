@@ -13,5 +13,5 @@ RUN apk --no-cache add ca-certificates
 RUN adduser -D -g '' appuser
 COPY --from=builder /gateway /usr/local/bin/gateway
 USER appuser
-EXPOSE 4433/udp 443/tcp
+EXPOSE 4433/udp 443/tcp 4435/udp
 ENTRYPOINT ["gateway"]

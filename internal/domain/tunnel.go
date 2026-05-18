@@ -23,8 +23,9 @@ func (id TunnelID) AgentID() string {
 }
 
 type TunnelRoute struct {
-	Label     string
-	LocalAddr string
+	Label      string
+	LocalAddr  string
+	TunnelType string // "tcp" or "udp"
 }
 
 type ActiveTunnel struct {

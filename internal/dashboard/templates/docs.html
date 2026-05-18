@@ -139,6 +139,11 @@
         <a href="#rate-limiting" class="nav-link" :class="active==='rate-limiting' && 'active'">Rate Limiting</a>
         <a href="#acls"          class="nav-link" :class="active==='acls'          && 'active'">Tunnel ACLs</a>
         <a href="#audit-log"     class="nav-link" :class="active==='audit-log'     && 'active'">Audit Log</a>
+
+        <p class="nav-section">Phase 4 — Advanced Networking</p>
+        <a href="#udp-tunnels"      class="nav-link" :class="active==='udp-tunnels'      && 'active'">UDP Tunnels</a>
+        <a href="#session-resume"   class="nav-link" :class="active==='session-resume'   && 'active'">Session Resume</a>
+        <a href="#region-routing"   class="nav-link" :class="active==='region-routing'   && 'active'">Region Routing</a>
       </div>
     </aside>
 
@@ -151,7 +156,7 @@
           <span class="text-xs font-semibold uppercase tracking-widest text-brand-400">Documentation</span>
         </div>
         <h1 class="text-3xl font-extrabold text-white mb-3 tracking-tight">TunnelEdge</h1>
-        <p class="text-slate-400 text-base mb-6">A self-hosted reverse-tunnel platform built on QUIC. Expose any local TCP service to the internet without opening firewall ports — via encrypted QUIC multiplexed streams and SNI-based domain routing. Includes Phase 2 multi-active HA with etcd coordination, and Phase 3 enterprise security: mTLS, JWT revocation, refresh tokens, tunnel CIDR ACLs, per-IP rate limiting, and a queryable audit log.</p>
+        <p class="text-slate-400 text-base mb-6">A self-hosted reverse-tunnel platform built on QUIC. Expose any local TCP or UDP service to the internet without opening firewall ports — via encrypted QUIC multiplexed streams and SNI-based domain routing. Includes Phase 2 multi-active HA with etcd coordination, Phase 3 enterprise security: mTLS, JWT revocation, refresh tokens, tunnel CIDR ACLs, per-IP rate limiting, and a queryable audit log, and Phase 4 advanced networking: UDP tunnels, session resume, region-aware routing, and EWMA congestion scoring.</p>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
           <a href="#quick-start" class="glass rounded-xl p-4 hover:border-brand-500/30 transition group">
@@ -181,7 +186,7 @@
       <!-- Quick Start -->
       <h2 id="quick-start">Quick Start</h2>
       <p>The fastest way to get TunnelEdge running is with Docker Compose. The full stack — registry, two coordinated gateways, a public TCP edge, dashboard, Mailpit for email, Prometheus for metrics, and Grafana for dashboards — starts with one command.</p>
-      <p><strong>Phases 1–3 complete.</strong> The shipped stack includes registry-backed relay leases, relay health reporting, agent failover across multiple gateway targets, a distributed watch-driven router (any gateway can serve any tunnel), an nginx public TCP edge, an optional etcd coordination backend for HA registry deployments, and full Phase 3 enterprise security hardening.</p>
+      <p><strong>Phases 1–4 complete.</strong> The shipped stack includes registry-backed relay leases, relay health reporting, agent failover across multiple gateway targets, a distributed watch-driven router (any gateway can serve any tunnel), an nginx public TCP edge, an optional etcd coordination backend for HA registry deployments, full Phase 3 enterprise security hardening, and Phase 4 advanced networking: UDP tunnels over QUIC datagrams, session resume with 30 s grace window, region-aware routing, and EWMA congestion scoring.</p>
 
       <h3>Prerequisites</h3>
       <ul>
@@ -444,6 +449,10 @@
             <tr><td>TE_GATEWAY_AUTH_RATE_LIMIT_RPM</td><td>0</td><td>Per-IP auth rate limit (req/min); 0 disables</td></tr>
             <tr><td>TE_GATEWAY_MAX_TUNNELS_PER_AGENT</td><td>0</td><td>Max active tunnels per agent; 0 = unlimited</td></tr>
             <tr><td>TE_GATEWAY_MAX_STREAMS_PER_TUNNEL</td><td>0</td><td>Max concurrent streams per tunnel; 0 = unlimited</td></tr>
+            <tr><td>TE_GATEWAY_REGION</td><td>—</td><td>Region label advertised to agents (Phase 4)</td></tr>
+            <tr><td>TE_GATEWAY_SESSION_RESUME_ENABLED</td><td>false</td><td>Allow agents to resume sessions after reconnect (Phase 4)</td></tr>
+            <tr><td>TE_GATEWAY_SESSION_RESUME_TTL</td><td>30s</td><td>Grace window for session resume (Phase 4)</td></tr>
+            <tr><td>TE_GATEWAY_UDP_LISTEN_ADDR</td><td>—</td><td>UDP address for UDP tunnel datagrams; empty disables (Phase 4)</td></tr>
           </tbody>
         </table>
       </div>
@@ -501,6 +510,8 @@
             <tr><td>TE_AGENT_MTLS_ENABLED</td><td>false</td><td>Present a client certificate to the gateway (Phase 3)</td></tr>
             <tr><td>TE_AGENT_CLIENT_CERT_FILE</td><td>—</td><td>Client certificate PEM path for mTLS</td></tr>
             <tr><td>TE_AGENT_CLIENT_KEY_FILE</td><td>—</td><td>Client private key PEM path for mTLS</td></tr>
+            <tr><td>TE_AGENT_PREFERRED_REGION</td><td>—</td><td>Preferred gateway region for routing hints (Phase 4)</td></tr>
+            <tr><td>TE_AGENT_SESSION_RESUME_ENABLED</td><td>false</td><td>Attempt session resume before full auth on reconnect (Phase 4)</td></tr>
           </tbody>
         </table>
       </div>
@@ -576,8 +587,8 @@
         <table class="doc-table">
           <thead><tr><th>Method + Path</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td>POST /agents/:id/tunnels</td><td>Create tunnel. Body: <code>{"label":"web","local_addr":"localhost:3000"}</code></td></tr>
-            <tr><td>GET /agents/:id/tunnels</td><td>List all tunnels for the agent</td></tr>
+            <tr><td>POST /agents/:id/tunnels</td><td>Create tunnel. Body: <code>{"label":"web","local_addr":"localhost:3000","tunnel_type":"tcp"}</code>. <code>tunnel_type</code> is <code>"tcp"</code> (default) or <code>"udp"</code>.</td></tr>
+            <tr><td>GET /agents/:id/tunnels</td><td>List all tunnels for the agent. Each item includes <code>tunnel_type</code>.</td></tr>
             <tr><td>GET /agents/:id/tunnels/:tid</td><td>Get a single tunnel</td></tr>
             <tr><td>PUT /agents/:id/tunnels/:tid</td><td>Update label or local address</td></tr>
             <tr><td>DELETE /agents/:id/tunnels/:tid</td><td>Delete a tunnel</td></tr>
@@ -727,6 +738,72 @@
 
       <h2 id="audit-log">Audit Log</h2>
       <p>All security-relevant events are written asynchronously to the <code>audit_events</code> PostgreSQL table. The audit service is fire-and-forget — audit failures never block the request path. Query events via the REST API or directly in your database for SIEM integration.</p>
+
+      <!-- ── Phase 4 ──────────────────────────────────────────────── -->
+
+      <h2 id="udp-tunnels">UDP Tunnels <span class="text-xs text-brand-400 ml-1">Phase 4</span></h2>
+      <p>TunnelEdge can tunnel UDP traffic (game servers, DNS, VoIP, real-time media) over QUIC's native datagram channel — no extra TCP wrapping, no head-of-line blocking.</p>
+
+      <h3>How it works</h3>
+      <ul>
+        <li>The gateway binds a UDP listener on <code>udp_listen_addr</code> (e.g. <code>:4435</code>).</li>
+        <li>Incoming UDP packets are framed as <code>MsgUDPDatagram (0x0B)</code> and forwarded to the agent as QUIC datagrams.</li>
+        <li>The agent's <code>UDPForwarder</code> unwraps each datagram and writes it to the local UDP socket.</li>
+        <li>Reply packets travel the reverse path; the gateway uses a session table keyed on <code>(label, srcAddr)</code> to return replies to the originating client.</li>
+      </ul>
+
+      <h3>Configuration</h3>
+      <p>In <code>config/gateway.yaml</code>:</p>
+<pre><code><span class="sh-section">gateway</span>:
+  udp_listen_addr: :4435   <span class="sh-comment"># UDP port agents can receive datagrams on</span></code></pre>
+      <p>In <code>config/agent.yaml</code>:</p>
+<pre><code><span class="sh-section">agent</span>:
+  tunnels:
+    - label: game
+      local_addr: localhost:7777
+      tunnel_type: udp        <span class="sh-comment"># "tcp" is the default</span></code></pre>
+      <p>The equivalent environment variables are <code>TE_GATEWAY_UDP_LISTEN_ADDR</code> on the gateway and <code>tunnel_type</code> is set per-tunnel in the config file (no env var override).</p>
+
+      <h2 id="session-resume">Session Resume <span class="text-xs text-brand-400 ml-1">Phase 4</span></h2>
+      <p>When an agent reconnects after a brief interruption, it can reclaim its existing public subdomain within a configurable grace window — without waiting for DNS propagation or re-advertising the tunnel to the registry.</p>
+
+      <h3>How it works</h3>
+      <ol>
+        <li>On successful auth the gateway generates a random 32-byte resume token and returns it in <code>AuthV2Response.resume_token</code>.</li>
+        <li>On disconnect the gateway calls <code>suspendTunnel</code> — it stores the token in the session repository with a deadline of <code>session_resume_ttl</code> (default 30 s) and keeps the public subdomain registered.</li>
+        <li>On reconnect the agent sends <code>MsgSessionResume (0x09)</code> with its cached token before attempting full auth.</li>
+        <li>If the token is valid and the deadline has not passed, the gateway responds with <code>ResumeStatusResumed (0x10)</code>, a fresh token, and resumes the existing heartbeat loop.</li>
+        <li>If the token is expired or not found the agent falls back to full <code>MsgAuthV2</code> authentication.</li>
+      </ol>
+
+      <h3>Configuration</h3>
+<pre><code><span class="sh-section">gateway</span>:
+  session_resume_enabled: true
+  session_resume_ttl: 30s    <span class="sh-comment"># grace window; default 30s</span></code></pre>
+<pre><code><span class="sh-section">agent</span>:
+  session_resume_enabled: true</code></pre>
+      <p>Environment variables: <code>TE_GATEWAY_SESSION_RESUME_ENABLED</code>, <code>TE_GATEWAY_SESSION_RESUME_TTL</code>, <code>TE_AGENT_SESSION_RESUME_ENABLED</code>.</p>
+
+      <h2 id="region-routing">Region-Aware Routing <span class="text-xs text-brand-400 ml-1">Phase 4</span></h2>
+      <p>Agents can declare a preferred region. The gateway returns the best relay addresses for that region, scored by an EWMA quality metric, so that reconnecting agents automatically use the closest/fastest gateway.</p>
+
+      <h3>EWMA congestion scoring</h3>
+      <p>Each relay is assigned a composite score updated on every health report:</p>
+      <ul>
+        <li><strong>RTT score</strong> — 40 % weight</li>
+        <li><strong>Packet-loss score</strong> — 40 % weight</li>
+        <li><strong>Utilisation score</strong> — 20 % weight</li>
+        <li>EWMA alpha: 0.3 (recent samples weighted ~3× more than older history)</li>
+      </ul>
+      <p><code>DistributedRouter.BestRelaysForRegion(region, n)</code> returns the top-n relay addresses in the requested region.</p>
+
+      <h3>Configuration</h3>
+<pre><code><span class="sh-section">gateway</span>:
+  region: us-east-1    <span class="sh-comment"># advertise this gateway's region to agents</span></code></pre>
+<pre><code><span class="sh-section">agent</span>:
+  preferred_region: us-east-1</code></pre>
+      <p>Environment variables: <code>TE_GATEWAY_REGION</code>, <code>TE_AGENT_PREFERRED_REGION</code>.</p>
+      <p>The agent prepends the <code>suggested_gateways</code> list from the auth response to its failover target list, so the next reconnection attempt automatically targets the lowest-latency relay in the preferred region.</p>
 
       <!-- Footer -->
       <div class="border-t border-white/5 pt-8 flex items-center justify-between text-sm text-slate-600">

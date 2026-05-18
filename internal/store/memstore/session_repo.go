@@ -102,4 +102,38 @@ func (r *MemorySessionRepository) CleanupExpired(_ context.Context, ttl time.Dur
 	return expired, nil
 }
 
+// GetResumable finds a session whose ResumeToken matches and whose
+// ResumeDeadline has not yet passed.
+func (r *MemorySessionRepository) GetResumable(_ context.Context, token string) (*domain.Session, error) {
+	if token == "" {
+		return nil, errs.New(errs.CodeInvalidArg, "resume token required")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := time.Now()
+	for _, sess := range r.sessions {
+		if sess.ResumeToken == token && sess.ResumeDeadline != nil && sess.ResumeDeadline.After(now) {
+			return sess, nil
+		}
+	}
+	return nil, errs.New(errs.CodeNotFound, "resumable session not found")
+}
+
+// SetResumable stores a resume token and deadline on the session identified by
+// tunnelID. The session remains in the map (it is still reachable by TunnelID)
+// so heartbeat / list operations continue to work during the grace window.
+func (r *MemorySessionRepository) SetResumable(_ context.Context, tunnelID, token string, deadline time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, exists := r.sessions[tunnelID]
+	if !exists {
+		return errs.New(errs.CodeNotFound, fmt.Sprintf("session %s not found", tunnelID))
+	}
+	sess.ResumeToken = token
+	sess.ResumeDeadline = &deadline
+	return nil
+}
+
 var _ domain.SessionRepository = (*MemorySessionRepository)(nil)

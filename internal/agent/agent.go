@@ -42,6 +42,13 @@ type Agent struct {
 	clientCertFile string
 	clientKeyFile  string
 
+	// Phase 4: region routing and session resume.
+	preferredRegion      string
+	sessionResumeEnabled bool
+	resumeToken          string
+	resumeTokenExpiry    time.Time
+	suggestedGateways    []string
+
 	mu          sync.RWMutex
 	conn        *quic.Conn
 	tunnelID    string
@@ -73,6 +80,10 @@ type Options struct {
 	ClientCertFile string
 	ClientKeyFile  string
 
+	// Phase 4: region routing and session resume.
+	PreferredRegion      string
+	SessionResumeEnabled bool
+
 	// EventCh is an optional buffered channel for broadcasting AgentEvents to the TUI.
 	// If nil, all event emission is skipped (headless mode).
 	EventCh chan<- AgentEvent
@@ -86,23 +97,25 @@ func NewAgent(opts Options) *Agent {
 	gatewayAddrs := normalizeGatewayAddrs(opts.GatewayAddr, opts.GatewayAddrs)
 
 	return &Agent{
-		gatewayAddrs:      gatewayAddrs,
-		token:             opts.Token,
-		tunnels:           opts.Tunnels,
-		tunnelMap:         tunnelMap,
-		reconnectDelay:    opts.ReconnectDelay,
-		maxReconnect:      opts.MaxReconnect,
-		heartbeatInterval: opts.HeartbeatInterval,
-		streamIdleTimeout: agentStreamIdleTimeout(opts.StreamIdleTimeout),
-		metrics:           opts.Metrics,
-		publicURLs:        make(map[string]string),
-		tlsCAFile:         opts.TLSCAFile,
-		tlsInsecure:       opts.TLSInsecure,
-		mtlsEnabled:       opts.MTLSEnabled,
-		clientCertFile:    opts.ClientCertFile,
-		clientKeyFile:     opts.ClientKeyFile,
-		reconnectCh:       make(chan struct{}, 1),
-		eventCh:           opts.EventCh,
+		gatewayAddrs:         gatewayAddrs,
+		token:                opts.Token,
+		tunnels:              opts.Tunnels,
+		tunnelMap:            tunnelMap,
+		reconnectDelay:       opts.ReconnectDelay,
+		maxReconnect:         opts.MaxReconnect,
+		heartbeatInterval:    opts.HeartbeatInterval,
+		streamIdleTimeout:    agentStreamIdleTimeout(opts.StreamIdleTimeout),
+		metrics:              opts.Metrics,
+		publicURLs:           make(map[string]string),
+		tlsCAFile:            opts.TLSCAFile,
+		tlsInsecure:          opts.TLSInsecure,
+		mtlsEnabled:          opts.MTLSEnabled,
+		clientCertFile:       opts.ClientCertFile,
+		clientKeyFile:        opts.ClientKeyFile,
+		preferredRegion:      opts.PreferredRegion,
+		sessionResumeEnabled: opts.SessionResumeEnabled,
+		reconnectCh:          make(chan struct{}, 1),
+		eventCh:              opts.EventCh,
 	}
 }
 
@@ -252,6 +265,15 @@ func (a *Agent) runConnectLoop(ctx context.Context) error {
 
 func (a *Agent) connectTargets(ctx context.Context) error {
 	targets := append([]string(nil), a.gatewayAddrs...)
+
+	// Phase 4C: prepend suggested gateways from last auth response (region routing).
+	a.mu.RLock()
+	suggested := append([]string(nil), a.suggestedGateways...)
+	a.mu.RUnlock()
+	if len(suggested) > 0 {
+		targets = append(suggested, targets...)
+	}
+
 	if len(targets) == 0 {
 		return fmt.Errorf("no gateway targets configured")
 	}
@@ -326,6 +348,26 @@ func (a *Agent) connect(ctx context.Context, gatewayAddr string) (err error) {
 		return fmt.Errorf("failed to send hello: %w", err)
 	}
 
+	// Phase 4B: try session resume before full auth if we have a cached token.
+	if a.sessionResumeEnabled {
+		a.mu.RLock()
+		resumeToken := a.resumeToken
+		a.mu.RUnlock()
+		if resumeToken != "" {
+			resumed, rErr := a.trySessionResume(ctx, conn, authStream, resumeToken)
+			if rErr != nil {
+				return fmt.Errorf("session resume error: %w", rErr)
+			}
+			if resumed {
+				return nil // streamLoop already called inside trySessionResume
+			}
+			// Token expired or not found — clear it and do full auth.
+			a.mu.Lock()
+			a.resumeToken = ""
+			a.mu.Unlock()
+		}
+	}
+
 	if len(a.tunnels) > 0 {
 		return a.authenticateV2(ctx, conn, authStream)
 	}
@@ -386,12 +428,18 @@ func (a *Agent) authenticateV2(ctx context.Context, conn *quic.Conn, authStream 
 	tunnelEntries := make([]transport.TunnelEntry, 0, len(a.tunnels))
 	for _, t := range a.tunnels {
 		tunnelEntries = append(tunnelEntries, transport.TunnelEntry{
-			Label:     t.Label,
-			LocalAddr: t.LocalAddr,
+			Label:      t.Label,
+			LocalAddr:  t.LocalAddr,
+			TunnelType: t.TunnelType,
 		})
 	}
 
-	if err := transport.EncodeAuthV2(authStream, a.token, tunnelEntries); err != nil {
+	authMsg := &transport.AuthV2Message{
+		Token:           a.token,
+		Tunnels:         tunnelEntries,
+		PreferredRegion: a.preferredRegion,
+	}
+	if err := transport.EncodeAuthV2(authStream, authMsg); err != nil {
 		return fmt.Errorf("failed to send auth v2: %w", err)
 	}
 
@@ -402,6 +450,18 @@ func (a *Agent) authenticateV2(ctx context.Context, conn *quic.Conn, authStream 
 
 	if authResp.Status != transport.AuthStatusOK {
 		return fmt.Errorf("authentication rejected by gateway")
+	}
+
+	// Cache resume token and suggested gateways for reconnect (Phase 4).
+	if authResp.ResumeToken != "" {
+		a.mu.Lock()
+		a.resumeToken = authResp.ResumeToken
+		a.mu.Unlock()
+	}
+	if len(authResp.SuggestedGateways) > 0 {
+		a.mu.Lock()
+		a.suggestedGateways = authResp.SuggestedGateways
+		a.mu.Unlock()
 	}
 
 	publicURLs := make(map[string]string, len(authResp.Tunnels))
@@ -445,6 +505,32 @@ func (a *Agent) streamLoop(ctx context.Context, conn *quic.Conn) error {
 		a.heartbeatLoop(groupCtx)
 		return nil
 	})
+
+	// Phase 4D: start UDP forwarders for any UDP-type tunnels.
+	udpForwarders := make(map[string]*UDPForwarder)
+	for _, t := range a.tunnels {
+		if t.TunnelType != "udp" {
+			continue
+		}
+		fwd, fwdErr := newUDPForwarder(t.Label, t.LocalAddr)
+		if fwdErr != nil {
+			log.Warn().Err(fwdErr).Str("label", t.Label).Str("local_addr", t.LocalAddr).Msg("failed to start UDP forwarder")
+			continue
+		}
+		udpForwarders[t.Label] = fwd
+		localFwd := fwd
+		g.Go(func() error {
+			defer localFwd.close()
+			localFwd.runLocalToGateway(groupCtx, conn)
+			return nil
+		})
+	}
+	if len(udpForwarders) > 0 {
+		g.Go(func() error {
+			a.udpDatagramLoop(groupCtx, conn, udpForwarders)
+			return nil
+		})
+	}
 
 	for {
 		select {
@@ -620,4 +706,46 @@ func (a *Agent) PublicURLs() map[string]string {
 		result[k] = v
 	}
 	return result
+}
+
+// trySessionResume sends a MsgSessionResume frame and processes the gateway's
+// response. Returns (true, nil) when the session was successfully resumed and
+// streamLoop has been entered. Returns (false, nil) when the token was rejected
+// (expired or not found) and the caller should proceed with full auth.
+func (a *Agent) trySessionResume(ctx context.Context, conn *quic.Conn, authStream *quic.Stream, token string) (bool, error) {
+	if err := transport.EncodeSessionResume(authStream, token); err != nil {
+		return false, fmt.Errorf("failed to send session resume: %w", err)
+	}
+
+	resp, err := transport.DecodeSessionResumeResp(authStream)
+	if err != nil {
+		return false, fmt.Errorf("failed to read session resume response: %w", err)
+	}
+
+	if resp.Status != transport.ResumeStatusResumed {
+		log.Info().
+			Uint8("status", resp.Status).
+			Msg("session resume rejected; will do full auth")
+		return false, nil
+	}
+
+	// Update cached state with the resumed tunnel info.
+	if resp.NewToken != "" {
+		a.mu.Lock()
+		a.resumeToken = resp.NewToken
+		a.mu.Unlock()
+	}
+
+	log.Info().
+		Str("tunnel_id", resp.TunnelID).
+		Msg("session resumed")
+
+	a.emitEvent(StatusUpdateEvent{Status: "Connected (resumed)"})
+
+	if a.metrics != nil {
+		a.metrics.ActiveTunnels.Inc()
+	}
+
+	// Enter the stream loop on the resumed connection.
+	return true, a.streamLoop(ctx, conn)
 }

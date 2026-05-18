@@ -73,6 +73,13 @@ func (g *Gateway) handlePublicConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	// Phase 4B: tunnel may be in session resume grace window (conn == nil).
+	if at.suspended || at.conn == nil {
+		log.Warn().Str("tunnel_id", tunnelID).Msg("tunnel is reconnecting; dropping connection")
+		conn.Close()
+		return
+	}
+
 	logger := log.With().
 		Str("tunnel_id", tunnelID).
 		Str("hostname", hostname).

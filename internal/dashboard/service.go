@@ -414,7 +414,7 @@ func NewTunnelService(tunnels domain.TunnelConfigRepository, agents domain.Agent
 	return &TunnelService{tunnels: tunnels, agents: agents}
 }
 
-func (s *TunnelService) Create(ctx context.Context, userID, agentID uint, label, localAddr string) (*domain.TunnelConfig, error) {
+func (s *TunnelService) Create(ctx context.Context, userID, agentID uint, label, localAddr, tunnelType string) (*domain.TunnelConfig, error) {
 	agent, err := s.agents.GetByID(ctx, agentID)
 	if err != nil {
 		return nil, errs.New(errs.CodeNotFound, "agent not found")
@@ -428,11 +428,15 @@ func (s *TunnelService) Create(ctx context.Context, userID, agentID uint, label,
 	if err := domain.ValidateLocalAddr(localAddr); err != nil {
 		return nil, err
 	}
+	if tunnelType == "" {
+		tunnelType = "tcp"
+	}
 
 	t := &domain.TunnelConfig{
 		AgentProfileID: agentID,
 		Label:          label,
 		LocalAddr:      localAddr,
+		TunnelType:     tunnelType,
 	}
 	if err := s.tunnels.Create(ctx, t); err != nil {
 		return nil, fmt.Errorf("failed to create tunnel: %w", err)
@@ -469,7 +473,7 @@ func (s *TunnelService) Get(ctx context.Context, userID, agentID, tunnelID uint)
 	return t, nil
 }
 
-func (s *TunnelService) Update(ctx context.Context, userID, agentID, tunnelID uint, label, localAddr string) (*domain.TunnelConfig, error) {
+func (s *TunnelService) Update(ctx context.Context, userID, agentID, tunnelID uint, label, localAddr, tunnelType string) (*domain.TunnelConfig, error) {
 	t, err := s.Get(ctx, userID, agentID, tunnelID)
 	if err != nil {
 		return nil, err
@@ -485,6 +489,9 @@ func (s *TunnelService) Update(ctx context.Context, userID, agentID, tunnelID ui
 			return nil, err
 		}
 		t.LocalAddr = localAddr
+	}
+	if tunnelType != "" {
+		t.TunnelType = tunnelType
 	}
 	if err := s.tunnels.Update(ctx, t); err != nil {
 		return nil, fmt.Errorf("failed to update tunnel: %w", err)

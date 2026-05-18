@@ -28,6 +28,11 @@ gateway:
   # auth_rate_limit_rpm: 60
   # max_tunnels_per_agent: 10
   # max_streams_per_tunnel: 100
+  # Phase 4: region routing, session resume, UDP tunnels
+  # region: us-east-1
+  # session_resume_enabled: true
+  # session_resume_ttl: 30s
+  # udp_listen_addr: :4434
 
 db:
   driver: postgres

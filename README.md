@@ -11,6 +11,7 @@ Inspired by [ngrok](https://ngrok.com), built to demonstrate infrastructure engi
 - **Phase 1 — Stability & Hardening:** complete.
 - **Phase 2 — HA & Distributed Coordination:** **complete.** Multi-active gateway topology with watch-driven distributed routing, etcd coordination backend, relay lease management, health reporting, agent failover, and public TCP edge are all shipped.
 - **Phase 3 — Security Hardening:** **complete.** mTLS transport helpers and agent/gateway wiring; agent token expiry and lockout; JWT `jti`/`aud` claims with revocation; refresh tokens; tunnel CIDR ACLs; per-IP rate limiting throughout (auth, gRPC, dashboard); per-agent tunnel quotas; per-tunnel stream quotas; relay bandwidth limiting; async audit log with query endpoint.
+- **Phase 4 — Advanced Networking:** **complete.** QUIC datagrams enabled; binary framing protocol v3; UDP tunnel support (UDP-over-QUIC datagram channel with per-tunnel `tunnel_type: udp`); session resume with 30 s grace window and random 32-byte tokens; region-aware routing (agent sends `preferred_region`, gateway returns `assigned_region` and `suggested_gateways`); EWMA congestion scoring (RTT 40 %, packet-loss 40 %, utilisation 20 %) in the distributed router.
 
 The default Docker Compose stack deploys two gateways behind an nginx TCP edge. Either gateway can serve any tunnel: if a public request arrives at `gateway-1` but the tunnel is owned by `gateway-2`, the connection is transparently proxied at L4. For HA registry coordination, point `TE_REGISTRY_ETCD_ENDPOINTS` at an etcd cluster — the in-memory coordinator is the single-node default.
 
@@ -20,6 +21,9 @@ The default Docker Compose stack deploys two gateways behind an nginx TCP edge. 
 
 - **QUIC Transport** — Low-latency, multiplexed streams over a single connection with built-in TLS 1.3
 - **TCP Forwarding** — Expose any local TCP service (HTTP, databases, custom protocols)
+- **UDP Tunnels** — Expose UDP services (game servers, DNS, real-time media) using QUIC datagrams; configure `tunnel_type: udp` per tunnel
+- **Session Resume** — Reconnecting agents reclaim their public subdomain within a 30 s grace window using a secure resume token; no DNS propagation delay
+- **Region-Aware Routing** — Agent declares a `preferred_region`; gateway returns the best relay addresses for that region using EWMA congestion scoring (RTT 40 %, packet-loss 40 %, utilisation 20 %)
 - **Multiplexed Streams** — Multiple independent streams over a single QUIC connection, no head-of-line blocking
 - **SNI Domain Routing** — Each tunnel gets a unique subdomain (e.g., `web-agent-1.tunneledge.dev`), routed via TLS SNI on a single port
 - **Automatic Reconnection** — Exponential backoff with jitter on connection loss, with support for multiple gateway targets during failover

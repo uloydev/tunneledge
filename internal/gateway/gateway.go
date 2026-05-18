@@ -21,10 +21,11 @@ import (
 )
 
 type activeTunnel struct {
-	tunnel   *domain.ActiveTunnel
-	conn     *quic.Conn
-	routeMap map[string]string
-	leaseID  string
+	tunnel    *domain.ActiveTunnel
+	conn      *quic.Conn
+	routeMap  map[string]string
+	leaseID   string
+	suspended bool // true during session resume grace window
 }
 
 type Gateway struct {
@@ -55,6 +56,15 @@ type Gateway struct {
 	shutdownTimeout      time.Duration
 	streamIdleTimeout    time.Duration
 	tunnelACLs           domain.TunnelACLRepository
+	// Phase 4: region, session resume, UDP.
+	region               string
+	sessionResumeEnabled bool
+	sessionResumeTTL     time.Duration
+	sessionRepo          domain.SessionRepository
+	udpListenAddr        string
+	// resume timer map — protected by resumeMu, independent of g.mu.
+	resumeMu            sync.Mutex
+	pendingResumeTimers map[string]*time.Timer
 }
 
 type Options struct {
@@ -82,6 +92,12 @@ type Options struct {
 	MaxStreamsPerTunnel int64
 	// Phase 3: tunnel ACL enforcement
 	TunnelACLs domain.TunnelACLRepository
+	// Phase 4: region, session resume, UDP.
+	Region               string
+	SessionResumeEnabled bool
+	SessionResumeTTL     time.Duration
+	SessionRepo          domain.SessionRepository
+	UDPListenAddr        string
 }
 
 func NewGateway(opts Options) (*Gateway, error) {
@@ -125,6 +141,12 @@ func NewGateway(opts Options) (*Gateway, error) {
 		shutdownTimeout:      gatewayShutdownTimeout(opts.ShutdownTimeout),
 		streamIdleTimeout:    streamIdleTimeout(opts.StreamIdleTimeout),
 		tunnelACLs:           opts.TunnelACLs,
+		region:               opts.Region,
+		sessionResumeEnabled: opts.SessionResumeEnabled,
+		sessionResumeTTL:     sessionResumeTTL(opts.SessionResumeTTL),
+		sessionRepo:          opts.SessionRepo,
+		udpListenAddr:        opts.UDPListenAddr,
+		pendingResumeTimers:  make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -151,6 +173,14 @@ func gatewayShutdownTimeout(v time.Duration) time.Duration {
 
 // streamIdleTimeout returns v when positive, otherwise the safe default of 30s.
 func streamIdleTimeout(v time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return 30 * time.Second
+}
+
+// sessionResumeTTL returns v when positive, otherwise the safe default of 30s.
+func sessionResumeTTL(v time.Duration) time.Duration {
 	if v > 0 {
 		return v
 	}
@@ -202,6 +232,24 @@ func (g *Gateway) Run(ctx context.Context) error {
 	group.Go(func() error {
 		return g.distRouter.Run(groupCtx, g.registryClient)
 	})
+
+	// Phase 4D: optional UDP listener.
+	if g.udpListenAddr != "" {
+		udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", g.udpListenAddr)
+		if udpAddrErr != nil {
+			return fmt.Errorf("invalid udp_listen_addr %q: %w", g.udpListenAddr, udpAddrErr)
+		}
+		udpConn, udpErr := net.ListenUDP("udp", udpAddr)
+		if udpErr != nil {
+			return fmt.Errorf("failed to listen UDP on %s: %w", g.udpListenAddr, udpErr)
+		}
+		defer udpConn.Close()
+		log.Info().Str("udp_addr", g.udpListenAddr).Msg("UDP listener started")
+		group.Go(func() error {
+			g.udpDatagramListener(groupCtx, udpConn)
+			return nil
+		})
+	}
 
 	<-ctx.Done()
 	cancel()
@@ -347,6 +395,114 @@ func (g *Gateway) removeTunnel(tunnelID, reason string) {
 	}
 }
 
+// suspendTunnel closes the current QUIC connection and streams for tunnelID
+// but keeps the router registration and tunnel entry alive for the session
+// resume grace window. A timer fires after sessionResumeTTL to fully clean up
+// if the agent does not reconnect.
+//
+// Only called when sessionResumeEnabled && sessionRepo != nil.
+func (g *Gateway) suspendTunnel(tunnelID, reason string) {
+	g.mu.Lock()
+	at, ok := g.tunnels[tunnelID]
+	if !ok {
+		g.mu.Unlock()
+		return
+	}
+
+	// Generate and store the resume token.
+	token, err := generateResumeToken()
+	if err != nil {
+		g.mu.Unlock()
+		// Fall back to full removal on crypto error.
+		log.Error().Err(err).Str("tunnel_id", tunnelID).Msg("failed to generate resume token; doing full removal")
+		g.removeTunnel(tunnelID, reason)
+		return
+	}
+
+	// Mark as suspended (nil out conn so public handler won't try to use it).
+	at.conn.CloseWithError(0, reason)
+	at.conn = nil
+	at.suspended = true
+	g.mu.Unlock()
+
+	// Close existing streams — they cannot survive a QUIC reconnect.
+	g.streamManager.CloseByTunnel(tunnelID)
+
+	deadline := time.Now().Add(g.sessionResumeTTL)
+	storeCtx, storeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if storeErr := g.sessionRepo.SetResumable(storeCtx, tunnelID, token, deadline); storeErr != nil {
+		log.Warn().Err(storeErr).Str("tunnel_id", tunnelID).Msg("failed to store resume token; doing full removal")
+		storeCancel()
+		g.removeTunnel(tunnelID, reason)
+		return
+	}
+	storeCancel()
+
+	if g.metrics != nil {
+		// Don't count as destroyed — tunnel is suspended, not gone.
+	}
+
+	log.Info().
+		Str("tunnel_id", tunnelID).
+		Str("reason", reason).
+		Dur("resume_ttl", g.sessionResumeTTL).
+		Msg("tunnel suspended; entering resume window")
+
+	// Start the finalization timer.
+	t := time.AfterFunc(g.sessionResumeTTL, func() {
+		g.finalizeTunnelRemoval(tunnelID, "resume_timeout")
+	})
+	g.resumeMu.Lock()
+	g.pendingResumeTimers[tunnelID] = t
+	g.resumeMu.Unlock()
+}
+
+// finalizeTunnelRemoval performs a full cleanup of a suspended or active tunnel.
+// It is idempotent — safe to call even if the tunnel has already been removed.
+func (g *Gateway) finalizeTunnelRemoval(tunnelID, reason string) {
+	// Cancel any pending timer.
+	g.resumeMu.Lock()
+	if t, ok := g.pendingResumeTimers[tunnelID]; ok {
+		t.Stop()
+		delete(g.pendingResumeTimers, tunnelID)
+	}
+	g.resumeMu.Unlock()
+
+	g.mu.Lock()
+	at, ok := g.tunnels[tunnelID]
+	if !ok {
+		g.mu.Unlock()
+		return
+	}
+	delete(g.tunnels, tunnelID)
+	g.mu.Unlock()
+
+	g.router.DeregisterAll(tunnelID)
+	g.streamManager.CloseByTunnel(tunnelID)
+	if at.conn != nil {
+		at.conn.CloseWithError(0, reason)
+	}
+
+	if g.metrics != nil {
+		g.metrics.ActiveTunnels.Dec()
+		g.metrics.TunnelDestroyed.WithLabelValues(reason).Inc()
+	}
+
+	log.Info().Str("tunnel_id", tunnelID).Str("reason", reason).Msg("tunnel finalized")
+
+	if at.leaseID != "" {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := g.registryClient.ReleaseLease(releaseCtx, at.leaseID); err != nil {
+			log.Warn().Err(err).Str("tunnel_id", tunnelID).Str("lease_id", at.leaseID).Msg("failed to release lease")
+		}
+		cancel()
+	}
+
+	if err := g.registryClient.DeregisterTunnel(tunnelID); err != nil {
+		log.Warn().Err(err).Str("tunnel_id", tunnelID).Msg("failed to deregister from registry")
+	}
+}
+
 func (g *Gateway) acquireTunnelLease(ctx context.Context, tunnelID string) (*domain.Lease, error) {
 	return g.registryClient.AcquireLease(ctx, domain.LeaseRequest{
 		TunnelID: tunnelID,
@@ -362,6 +518,7 @@ func (g *Gateway) reportRelayHealthLoop(ctx context.Context) error {
 			ActiveTunnels: int32(g.ActiveTunnelCount()),
 			ActiveStreams: int32(g.ActiveStreamCount()),
 			RecordedAt:    time.Now(),
+			Region:        g.region,
 		}
 		if err := g.registryClient.ReportRelayHealth(ctx, g.relayID, health); err != nil && ctx.Err() == nil {
 			log.Warn().Err(err).Str("relay_id", g.relayID).Msg("failed to report relay health")

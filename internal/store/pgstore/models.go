@@ -27,6 +27,9 @@ type TunnelSessionModel struct {
 	ConnectedAt    time.Time
 	DisconnectedAt *time.Time
 	LastHeartbeat  time.Time
+	// Phase 4 session resume.
+	ResumeToken    string     `gorm:"index;size:512"`
+	ResumeDeadline *time.Time `gorm:"index"`
 }
 
 func (TunnelSessionModel) TableName() string { return "tunnel_sessions" }
@@ -39,6 +42,7 @@ type RelayModel struct {
 	ActiveTunnels int32
 	ActiveStreams int32
 	LastSeen      time.Time `gorm:"index"`
+	Region        string    `gorm:"size:64;index"`
 }
 
 func (RelayModel) TableName() string { return "relay_registry" }
@@ -68,6 +72,7 @@ type RelayHealthModel struct {
 	CPUUtilizationPct      float64
 	MemoryUtilizationPct   float64
 	RecordedAt             time.Time `gorm:"index;not null"`
+	Region                 string    `gorm:"size:64;index"`
 }
 
 func (RelayHealthModel) TableName() string { return "relay_health_snapshots" }
@@ -157,6 +162,7 @@ type TunnelDefinitionModel struct {
 	AgentProfileID uint   `gorm:"index;not null"`
 	Label          string `gorm:"size:64;not null"`
 	LocalAddr      string `gorm:"size:256;not null"`
+	TunnelType     string `gorm:"size:16;default:'tcp'"`
 }
 
 func (TunnelDefinitionModel) TableName() string { return "tunnel_definitions" }

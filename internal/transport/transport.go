@@ -16,7 +16,11 @@ import (
 const (
 	// Protocol version constants. Increment ProtocolVersion when making
 	// incompatible wire-format changes.
-	ProtocolVersion uint16 = 2
+	//
+	// v3 adds: TunnelType per TunnelEntry, PreferredRegion in AuthV2,
+	// ResumeToken/AssignedRegion/SuggestedGateways in AuthV2Response,
+	// MsgSessionResume/Resp, MsgUDPDatagram.
+	ProtocolVersion uint16 = 3
 
 	// MsgHello is the first frame sent by a connecting agent. It carries the
 	// protocol version so the gateway can reject incompatible clients early,
@@ -30,18 +34,36 @@ const (
 	MsgAuthV2       byte = 0x06
 	MsgAuthRespV2   byte = 0x07
 	MsgStreamLabel  byte = 0x08
+	// Phase 4 additions.
+	MsgSessionResume     byte = 0x09 // agent → gateway: resume existing session
+	MsgSessionResumeResp byte = 0x0A // gateway → agent: resume result
+	MsgUDPDatagram       byte = 0x0B // bidirectional: UDP payload encapsulated in QUIC datagram
 
 	AuthStatusOK           byte = 0x00
 	AuthStatusError        byte = 0x01
 	AuthStatusVersionError byte = 0x02 // client protocol version not supported
 
-	maxTokenLen     = 4096
-	maxTunnelIDLen  = 256
-	maxPublicURLLen = 512
-	maxLabelLen     = 64
-	maxLocalAddrLen = 256
-	maxTunnelCount  = 32
-	maxVersionLen   = 64
+	// Session resume status codes.
+	ResumeStatusResumed  byte = 0x10 // session successfully resumed
+	ResumeStatusExpired  byte = 0x11 // resume token expired
+	ResumeStatusNotFound byte = 0x12 // session not found
+
+	// TunnelType constants used in TunnelEntry.
+	TunnelTypeTCP = "tcp"
+	TunnelTypeUDP = "udp"
+
+	maxTokenLen       = 4096
+	maxTunnelIDLen    = 256
+	maxPublicURLLen   = 512
+	maxLabelLen       = 64
+	maxLocalAddrLen   = 256
+	maxTunnelCount    = 32
+	maxVersionLen     = 64
+	maxResumeTokenLen = 512
+	maxRegionLen      = 64
+	maxSrcAddrLen     = 64
+	maxUDPPayloadLen  = 65535
+	maxSuggestedGWs   = 8
 )
 
 // HelloMessage is the connection-level handshake frame. Agents send it as the
@@ -217,14 +239,18 @@ func ReadMessageType(r io.Reader) (byte, error) {
 	return buf[0], nil
 }
 
+// TunnelEntry describes a single tunnel the agent wants the gateway to expose.
 type TunnelEntry struct {
-	Label     string
-	LocalAddr string
+	Label      string
+	LocalAddr  string
+	TunnelType string // "tcp" or "udp"; empty defaults to "tcp"
 }
 
+// AuthV2Message is the payload of MsgAuthV2.
 type AuthV2Message struct {
-	Token   string
-	Tunnels []TunnelEntry
+	Token           string
+	Tunnels         []TunnelEntry
+	PreferredRegion string // optional; empty = no preference
 }
 
 type TunnelHostEntry struct {
@@ -232,43 +258,85 @@ type TunnelHostEntry struct {
 	Hostname string
 }
 
+// AuthV2ResponseMessage is the payload of MsgAuthRespV2.
 type AuthV2ResponseMessage struct {
-	Status   byte
-	TunnelID string
-	Tunnels  []TunnelHostEntry
+	Status            byte
+	TunnelID          string
+	Tunnels           []TunnelHostEntry
+	ResumeToken       string   // HMAC-SHA256 token for session resume; empty if disabled
+	AssignedRegion    string   // gateway's configured region
+	SuggestedGateways []string // ordered list of gateways for preferred region
 }
 
-func EncodeAuthV2(w io.Writer, token string, tunnels []TunnelEntry) error {
-	tokenBytes := []byte(token)
+// SessionResumeMessage is sent by the agent as MsgSessionResume to attempt
+// resuming a previously established session.
+type SessionResumeMessage struct {
+	Token string // resume token issued by the gateway on last auth
+}
+
+// SessionResumeRespMessage is the gateway's reply to MsgSessionResume.
+type SessionResumeRespMessage struct {
+	Status   byte   // ResumeStatusResumed / ResumeStatusExpired / ResumeStatusNotFound
+	TunnelID string // filled only when Status == ResumeStatusResumed
+	NewToken string // new resume token to use on the next reconnect
+}
+
+// UDPDatagramMessage carries a UDP payload between agent and gateway.
+type UDPDatagramMessage struct {
+	Label   string // tunnel label
+	SrcAddr string // source address string (UDP addr)
+	Payload []byte
+}
+
+// EncodeAuthV2 writes a MsgAuthV2 frame.
+//
+// Wire format (v3):
+//
+//	[0x06]
+//	[token_len: 2B][token: var]
+//	[tunnel_count: 1B]
+//	  per tunnel: [label_len: 1B][label: var][local_addr_len: 2B][local_addr: var][type_len: 1B][type: var]
+//	[region_len: 1B][region: var]
+func EncodeAuthV2(w io.Writer, msg *AuthV2Message) error {
+	tokenBytes := []byte(msg.Token)
 	if len(tokenBytes) > maxTokenLen {
 		return errs.New(errs.CodeInvalidArg, "token too long")
 	}
-	if len(tunnels) > maxTunnelCount {
+	if len(msg.Tunnels) > maxTunnelCount {
 		return errs.New(errs.CodeInvalidArg, "too many tunnels")
 	}
+	regionBytes := []byte(msg.PreferredRegion)
+	if len(regionBytes) > maxRegionLen {
+		return errs.New(errs.CodeInvalidArg, "region too long")
+	}
 
-	size := 3 + len(tokenBytes) + 1
-	for _, t := range tunnels {
-		size += 1 + len(t.Label) + 2 + len(t.LocalAddr)
+	// Pre-calculate buffer size.
+	size := 1 + 2 + len(tokenBytes) + 1 + 1 + len(regionBytes)
+	for _, t := range msg.Tunnels {
+		size += 1 + len(t.Label) + 2 + len(t.LocalAddr) + 1 + len(t.TunnelType)
 	}
 
 	buf := make([]byte, size)
 	off := 0
+
 	buf[off] = MsgAuthV2
 	off++
 	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(tokenBytes)))
 	off += 2
 	copy(buf[off:], tokenBytes)
 	off += len(tokenBytes)
-	buf[off] = byte(len(tunnels))
+	buf[off] = byte(len(msg.Tunnels))
 	off++
 
-	for _, t := range tunnels {
+	for _, t := range msg.Tunnels {
 		if len(t.Label) > maxLabelLen {
 			return errs.New(errs.CodeInvalidArg, fmt.Sprintf("label too long: %s", t.Label))
 		}
 		if len(t.LocalAddr) > maxLocalAddrLen {
 			return errs.New(errs.CodeInvalidArg, fmt.Sprintf("local_addr too long: %s", t.LocalAddr))
+		}
+		if len(t.TunnelType) > maxLabelLen {
+			return errs.New(errs.CodeInvalidArg, "tunnel_type too long")
 		}
 		buf[off] = byte(len(t.Label))
 		off++
@@ -278,12 +346,22 @@ func EncodeAuthV2(w io.Writer, token string, tunnels []TunnelEntry) error {
 		off += 2
 		copy(buf[off:], t.LocalAddr)
 		off += len(t.LocalAddr)
+		buf[off] = byte(len(t.TunnelType))
+		off++
+		copy(buf[off:], t.TunnelType)
+		off += len(t.TunnelType)
 	}
+
+	buf[off] = byte(len(regionBytes))
+	off++
+	copy(buf[off:], regionBytes)
+	off += len(regionBytes)
 
 	_, err := w.Write(buf[:off])
 	return err
 }
 
+// DecodeAuthV2 reads a MsgAuthV2 frame from r (message-type byte already consumed).
 func DecodeAuthV2(r io.Reader) (*AuthV2Message, error) {
 	header := make([]byte, 3)
 	if _, err := io.ReadFull(r, header); err != nil {
@@ -291,7 +369,7 @@ func DecodeAuthV2(r io.Reader) (*AuthV2Message, error) {
 	}
 
 	if header[0] != MsgAuthV2 {
-		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected auth v2 message type 0x06, got 0x%02x", header[0]))
+		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected auth v2 type 0x06, got 0x%02x", header[0]))
 	}
 
 	tokenLen := binary.BigEndian.Uint16(header[1:3])
@@ -343,43 +421,110 @@ func DecodeAuthV2(r io.Reader) (*AuthV2Message, error) {
 			return nil, fmt.Errorf("failed to read local_addr: %w", err)
 		}
 
+		typeLenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(r, typeLenBuf); err != nil {
+			return nil, fmt.Errorf("failed to read tunnel_type len: %w", err)
+		}
+		typeLen := int(typeLenBuf[0])
+		if typeLen > maxLabelLen {
+			return nil, errs.New(errs.CodeInvalidArg, "tunnel_type too long")
+		}
+		var tunnelType string
+		if typeLen > 0 {
+			typeBuf := make([]byte, typeLen)
+			if _, err := io.ReadFull(r, typeBuf); err != nil {
+				return nil, fmt.Errorf("failed to read tunnel_type: %w", err)
+			}
+			tunnelType = string(typeBuf)
+		}
+
 		tunnels = append(tunnels, TunnelEntry{
-			Label:     string(labelBuf),
-			LocalAddr: string(addrBuf),
+			Label:      string(labelBuf),
+			LocalAddr:  string(addrBuf),
+			TunnelType: tunnelType,
 		})
 	}
 
-	return &AuthV2Message{Token: string(tokenBuf), Tunnels: tunnels}, nil
+	// Read optional preferred region.
+	regionLenBuf := make([]byte, 1)
+	if _, err := io.ReadFull(r, regionLenBuf); err != nil {
+		return nil, fmt.Errorf("failed to read region len: %w", err)
+	}
+	regionLen := int(regionLenBuf[0])
+	if regionLen > maxRegionLen {
+		return nil, errs.New(errs.CodeInvalidArg, "region too long")
+	}
+	var preferredRegion string
+	if regionLen > 0 {
+		regionBuf := make([]byte, regionLen)
+		if _, err := io.ReadFull(r, regionBuf); err != nil {
+			return nil, fmt.Errorf("failed to read region: %w", err)
+		}
+		preferredRegion = string(regionBuf)
+	}
+
+	return &AuthV2Message{
+		Token:           string(tokenBuf),
+		Tunnels:         tunnels,
+		PreferredRegion: preferredRegion,
+	}, nil
 }
 
-func EncodeAuthV2Response(w io.Writer, status byte, tunnelID string, tunnels []TunnelHostEntry) error {
-	idBytes := []byte(tunnelID)
+// EncodeAuthV2Response writes a MsgAuthRespV2 frame.
+//
+// Wire format (v3):
+//
+//	[0x07][status: 1B][tunnelid_len: 2B][tunnelid: var]
+//	[tunnel_count: 1B]
+//	  per tunnel: [label_len: 1B][label: var][hostname_len: 2B][hostname: var]
+//	[resume_token_len: 2B][resume_token: var]
+//	[assigned_region_len: 1B][assigned_region: var]
+//	[suggested_count: 1B]
+//	  per suggested gateway: [addr_len: 2B][addr: var]
+func EncodeAuthV2Response(w io.Writer, msg *AuthV2ResponseMessage) error {
+	idBytes := []byte(msg.TunnelID)
 	if len(idBytes) > maxTunnelIDLen {
 		return errs.New(errs.CodeInvalidArg, "tunnel_id too long")
 	}
-	if len(tunnels) > maxTunnelCount {
+	if len(msg.Tunnels) > maxTunnelCount {
 		return errs.New(errs.CodeInvalidArg, "too many tunnels in response")
 	}
+	resumeBytes := []byte(msg.ResumeToken)
+	if len(resumeBytes) > maxResumeTokenLen {
+		return errs.New(errs.CodeInvalidArg, "resume_token too long")
+	}
+	regionBytes := []byte(msg.AssignedRegion)
+	if len(regionBytes) > maxRegionLen {
+		return errs.New(errs.CodeInvalidArg, "assigned_region too long")
+	}
+	if len(msg.SuggestedGateways) > maxSuggestedGWs {
+		return errs.New(errs.CodeInvalidArg, "too many suggested gateways")
+	}
 
-	size := 4 + len(idBytes) + 1
-	for _, t := range tunnels {
+	size := 1 + 1 + 2 + len(idBytes) + 1 // type + status + id_len + id + count
+	for _, t := range msg.Tunnels {
 		size += 1 + len(t.Label) + 2 + len(t.Hostname)
+	}
+	size += 2 + len(resumeBytes) + 1 + len(regionBytes) + 1 // resume_token + region + gw_count
+	for _, gw := range msg.SuggestedGateways {
+		size += 2 + len(gw)
 	}
 
 	buf := make([]byte, size)
 	off := 0
+
 	buf[off] = MsgAuthRespV2
 	off++
-	buf[off] = status
+	buf[off] = msg.Status
 	off++
 	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(idBytes)))
 	off += 2
 	copy(buf[off:], idBytes)
 	off += len(idBytes)
-	buf[off] = byte(len(tunnels))
+	buf[off] = byte(len(msg.Tunnels))
 	off++
 
-	for _, t := range tunnels {
+	for _, t := range msg.Tunnels {
 		buf[off] = byte(len(t.Label))
 		off++
 		copy(buf[off:], t.Label)
@@ -390,10 +535,31 @@ func EncodeAuthV2Response(w io.Writer, status byte, tunnelID string, tunnels []T
 		off += len(t.Hostname)
 	}
 
+	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(resumeBytes)))
+	off += 2
+	copy(buf[off:], resumeBytes)
+	off += len(resumeBytes)
+
+	buf[off] = byte(len(regionBytes))
+	off++
+	copy(buf[off:], regionBytes)
+	off += len(regionBytes)
+
+	buf[off] = byte(len(msg.SuggestedGateways))
+	off++
+	for _, gw := range msg.SuggestedGateways {
+		gwBytes := []byte(gw)
+		binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(gwBytes)))
+		off += 2
+		copy(buf[off:], gwBytes)
+		off += len(gwBytes)
+	}
+
 	_, err := w.Write(buf[:off])
 	return err
 }
 
+// DecodeAuthV2Response reads a MsgAuthRespV2 frame (message-type byte NOT consumed).
 func DecodeAuthV2Response(r io.Reader) (*AuthV2ResponseMessage, error) {
 	header := make([]byte, 4)
 	if _, err := io.ReadFull(r, header); err != nil {
@@ -461,11 +627,254 @@ func DecodeAuthV2Response(r io.Reader) (*AuthV2ResponseMessage, error) {
 		})
 	}
 
+	// Read resume token.
+	resumeLenBuf := make([]byte, 2)
+	if _, err := io.ReadFull(r, resumeLenBuf); err != nil {
+		return nil, fmt.Errorf("failed to read resume_token len: %w", err)
+	}
+	resumeLen := int(binary.BigEndian.Uint16(resumeLenBuf))
+	if resumeLen > maxResumeTokenLen {
+		return nil, errs.New(errs.CodeInvalidArg, "resume_token too long")
+	}
+	var resumeToken string
+	if resumeLen > 0 {
+		resumeBuf := make([]byte, resumeLen)
+		if _, err := io.ReadFull(r, resumeBuf); err != nil {
+			return nil, fmt.Errorf("failed to read resume_token: %w", err)
+		}
+		resumeToken = string(resumeBuf)
+	}
+
+	// Read assigned region.
+	regionLenBuf := make([]byte, 1)
+	if _, err := io.ReadFull(r, regionLenBuf); err != nil {
+		return nil, fmt.Errorf("failed to read assigned_region len: %w", err)
+	}
+	regionLen := int(regionLenBuf[0])
+	if regionLen > maxRegionLen {
+		return nil, errs.New(errs.CodeInvalidArg, "assigned_region too long")
+	}
+	var assignedRegion string
+	if regionLen > 0 {
+		regionBuf := make([]byte, regionLen)
+		if _, err := io.ReadFull(r, regionBuf); err != nil {
+			return nil, fmt.Errorf("failed to read assigned_region: %w", err)
+		}
+		assignedRegion = string(regionBuf)
+	}
+
+	// Read suggested gateways.
+	gwCountBuf := make([]byte, 1)
+	if _, err := io.ReadFull(r, gwCountBuf); err != nil {
+		return nil, fmt.Errorf("failed to read suggested gateway count: %w", err)
+	}
+	gwCount := int(gwCountBuf[0])
+	if gwCount > maxSuggestedGWs {
+		return nil, errs.New(errs.CodeInvalidArg, "too many suggested gateways")
+	}
+	suggestedGWs := make([]string, 0, gwCount)
+	for i := 0; i < gwCount; i++ {
+		addrLenBuf := make([]byte, 2)
+		if _, err := io.ReadFull(r, addrLenBuf); err != nil {
+			return nil, fmt.Errorf("failed to read suggested gw addr len: %w", err)
+		}
+		addrLen := int(binary.BigEndian.Uint16(addrLenBuf))
+		if addrLen > maxPublicURLLen {
+			return nil, errs.New(errs.CodeInvalidArg, "suggested gateway addr too long")
+		}
+		addrBuf := make([]byte, addrLen)
+		if _, err := io.ReadFull(r, addrBuf); err != nil {
+			return nil, fmt.Errorf("failed to read suggested gw addr: %w", err)
+		}
+		suggestedGWs = append(suggestedGWs, string(addrBuf))
+	}
+
 	return &AuthV2ResponseMessage{
-		Status:   status,
-		TunnelID: tunnelID,
-		Tunnels:  tunnels,
+		Status:            status,
+		TunnelID:          tunnelID,
+		Tunnels:           tunnels,
+		ResumeToken:       resumeToken,
+		AssignedRegion:    assignedRegion,
+		SuggestedGateways: suggestedGWs,
 	}, nil
+}
+
+// EncodeSessionResume writes a MsgSessionResume frame.
+// Wire: [0x09][token_len: 2B][token: var]
+func EncodeSessionResume(w io.Writer, token string) error {
+	tb := []byte(token)
+	if len(tb) > maxResumeTokenLen {
+		return errs.New(errs.CodeInvalidArg, "resume token too long")
+	}
+	buf := make([]byte, 3+len(tb))
+	buf[0] = MsgSessionResume
+	binary.BigEndian.PutUint16(buf[1:3], uint16(len(tb)))
+	copy(buf[3:], tb)
+	_, err := w.Write(buf)
+	return err
+}
+
+// DecodeSessionResume reads a MsgSessionResume frame (message-type byte NOT consumed).
+func DecodeSessionResume(r io.Reader) (*SessionResumeMessage, error) {
+	header := make([]byte, 3)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, fmt.Errorf("failed to read session resume header: %w", err)
+	}
+	if header[0] != MsgSessionResume {
+		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected session resume type 0x09, got 0x%02x", header[0]))
+	}
+	tokenLen := int(binary.BigEndian.Uint16(header[1:3]))
+	if tokenLen > maxResumeTokenLen {
+		return nil, errs.New(errs.CodeInvalidArg, "resume token too long")
+	}
+	tb := make([]byte, tokenLen)
+	if _, err := io.ReadFull(r, tb); err != nil {
+		return nil, fmt.Errorf("failed to read resume token: %w", err)
+	}
+	return &SessionResumeMessage{Token: string(tb)}, nil
+}
+
+// EncodeSessionResumeResp writes a MsgSessionResumeResp frame.
+// Wire: [0x0A][status: 1B][tunnelid_len: 2B][tunnelid: var][new_token_len: 2B][new_token: var]
+func EncodeSessionResumeResp(w io.Writer, msg *SessionResumeRespMessage) error {
+	idBytes := []byte(msg.TunnelID)
+	ntBytes := []byte(msg.NewToken)
+	if len(idBytes) > maxTunnelIDLen {
+		return errs.New(errs.CodeInvalidArg, "tunnel_id too long")
+	}
+	if len(ntBytes) > maxResumeTokenLen {
+		return errs.New(errs.CodeInvalidArg, "new resume token too long")
+	}
+	buf := make([]byte, 1+1+2+len(idBytes)+2+len(ntBytes))
+	off := 0
+	buf[off] = MsgSessionResumeResp
+	off++
+	buf[off] = msg.Status
+	off++
+	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(idBytes)))
+	off += 2
+	copy(buf[off:], idBytes)
+	off += len(idBytes)
+	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(ntBytes)))
+	off += 2
+	copy(buf[off:], ntBytes)
+	_, err := w.Write(buf)
+	return err
+}
+
+// DecodeSessionResumeResp reads a MsgSessionResumeResp frame (message-type byte NOT consumed).
+func DecodeSessionResumeResp(r io.Reader) (*SessionResumeRespMessage, error) {
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, fmt.Errorf("failed to read session resume resp header: %w", err)
+	}
+	if header[0] != MsgSessionResumeResp {
+		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected session resume resp type 0x0A, got 0x%02x", header[0]))
+	}
+	status := header[1]
+	idLen := int(binary.BigEndian.Uint16(header[2:4]))
+	if idLen > maxTunnelIDLen {
+		return nil, errs.New(errs.CodeInvalidArg, "tunnel_id too long")
+	}
+	var tunnelID string
+	if idLen > 0 {
+		idBuf := make([]byte, idLen)
+		if _, err := io.ReadFull(r, idBuf); err != nil {
+			return nil, fmt.Errorf("failed to read resume resp tunnel_id: %w", err)
+		}
+		tunnelID = string(idBuf)
+	}
+	ntLenBuf := make([]byte, 2)
+	if _, err := io.ReadFull(r, ntLenBuf); err != nil {
+		return nil, fmt.Errorf("failed to read new token len: %w", err)
+	}
+	ntLen := int(binary.BigEndian.Uint16(ntLenBuf))
+	if ntLen > maxResumeTokenLen {
+		return nil, errs.New(errs.CodeInvalidArg, "new resume token too long")
+	}
+	var newToken string
+	if ntLen > 0 {
+		ntBuf := make([]byte, ntLen)
+		if _, err := io.ReadFull(r, ntBuf); err != nil {
+			return nil, fmt.Errorf("failed to read new resume token: %w", err)
+		}
+		newToken = string(ntBuf)
+	}
+	return &SessionResumeRespMessage{Status: status, TunnelID: tunnelID, NewToken: newToken}, nil
+}
+
+// EncodeUDPDatagram writes a MsgUDPDatagram frame.
+// Wire: [0x0B][label_len: 1B][label: var][src_addr_len: 1B][src_addr: var][payload_len: 2B][payload: var]
+func EncodeUDPDatagram(msg *UDPDatagramMessage) ([]byte, error) {
+	lb := []byte(msg.Label)
+	ab := []byte(msg.SrcAddr)
+	if len(lb) > maxLabelLen {
+		return nil, errs.New(errs.CodeInvalidArg, "label too long")
+	}
+	if len(ab) > maxSrcAddrLen {
+		return nil, errs.New(errs.CodeInvalidArg, "src_addr too long")
+	}
+	if len(msg.Payload) > maxUDPPayloadLen {
+		return nil, errs.New(errs.CodeInvalidArg, "UDP payload too long")
+	}
+	buf := make([]byte, 1+1+len(lb)+1+len(ab)+2+len(msg.Payload))
+	off := 0
+	buf[off] = MsgUDPDatagram
+	off++
+	buf[off] = byte(len(lb))
+	off++
+	copy(buf[off:], lb)
+	off += len(lb)
+	buf[off] = byte(len(ab))
+	off++
+	copy(buf[off:], ab)
+	off += len(ab)
+	binary.BigEndian.PutUint16(buf[off:off+2], uint16(len(msg.Payload)))
+	off += 2
+	copy(buf[off:], msg.Payload)
+	return buf, nil
+}
+
+// DecodeUDPDatagram decodes a raw datagram byte slice into UDPDatagramMessage.
+// The first byte (MsgUDPDatagram) must be present.
+func DecodeUDPDatagram(data []byte) (*UDPDatagramMessage, error) {
+	if len(data) < 6 {
+		return nil, errs.New(errs.CodeInvalidArg, "UDP datagram too short")
+	}
+	if data[0] != MsgUDPDatagram {
+		return nil, errs.New(errs.CodeInvalidArg, fmt.Sprintf("expected UDP datagram type 0x0B, got 0x%02x", data[0]))
+	}
+	off := 1
+	labelLen := int(data[off])
+	off++
+	if off+labelLen > len(data) {
+		return nil, errs.New(errs.CodeInvalidArg, "truncated label")
+	}
+	label := string(data[off : off+labelLen])
+	off += labelLen
+
+	if off >= len(data) {
+		return nil, errs.New(errs.CodeInvalidArg, "truncated src_addr len")
+	}
+	srcAddrLen := int(data[off])
+	off++
+	if off+srcAddrLen > len(data) {
+		return nil, errs.New(errs.CodeInvalidArg, "truncated src_addr")
+	}
+	srcAddr := string(data[off : off+srcAddrLen])
+	off += srcAddrLen
+
+	if off+2 > len(data) {
+		return nil, errs.New(errs.CodeInvalidArg, "truncated payload len")
+	}
+	payloadLen := int(binary.BigEndian.Uint16(data[off : off+2]))
+	off += 2
+	if off+payloadLen > len(data) {
+		return nil, errs.New(errs.CodeInvalidArg, "truncated payload")
+	}
+	payload := make([]byte, payloadLen)
+	copy(payload, data[off:off+payloadLen])
+	return &UDPDatagramMessage{Label: label, SrcAddr: srcAddr, Payload: payload}, nil
 }
 
 func EncodeStreamLabel(w io.Writer, label string) error {
@@ -510,6 +919,7 @@ func QUICDial(ctx context.Context, addr string, tlsCfg *tls.Config) (*quic.Conn,
 	conn, err := quic.DialAddr(ctx, addr, tlsCfg, &quic.Config{
 		MaxIdleTimeout:  60 * time.Second,
 		KeepAlivePeriod: 15 * time.Second,
+		EnableDatagrams: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial QUIC %s: %w", addr, err)
@@ -521,6 +931,7 @@ func QUICListen(addr string, tlsCfg *tls.Config) (*quic.Listener, error) {
 	listener, err := quic.ListenAddr(addr, tlsCfg, &quic.Config{
 		MaxIdleTimeout:  60 * time.Second,
 		KeepAlivePeriod: 15 * time.Second,
+		EnableDatagrams: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen QUIC on %s: %w", addr, err)

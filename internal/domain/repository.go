@@ -19,6 +19,9 @@ type SessionRepository interface {
 	List(ctx context.Context) ([]*Session, error)
 	Heartbeat(ctx context.Context, tunnelID string) error
 	CleanupExpired(ctx context.Context, ttl time.Duration) (int, error)
+	// Phase 4 session resume.
+	GetResumable(ctx context.Context, token string) (*Session, error)
+	SetResumable(ctx context.Context, tunnelID, token string, deadline time.Time) error
 }
 
 type RelayRepository interface {

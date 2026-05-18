@@ -28,3 +28,14 @@ agent:
   # client_cert_file: /path/to/certs/agent.crt
   # client_key_file: /path/to/certs/agent.key
   # tls_ca_file: /path/to/certs/ca.crt
+  # Phase 4: region routing and session resume
+  # preferred_region: us-east-1
+  # session_resume_enabled: true
+  # Per-tunnel protocol — add tunnel_type: udp for UDP tunnels (default: tcp)
+  # tunnels:
+  #   - label: web
+  #     local_addr: localhost:3000
+  #     tunnel_type: tcp
+  #   - label: game
+  #     local_addr: localhost:7777
+  #     tunnel_type: udp

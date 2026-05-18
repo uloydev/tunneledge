@@ -18,10 +18,15 @@ func NewPGTunnelConfigRepository(db *gorm.DB) *PGTunnelConfigRepository {
 }
 
 func (r *PGTunnelConfigRepository) Create(ctx context.Context, tunnel *domain.TunnelConfig) error {
+	tunnelType := tunnel.TunnelType
+	if tunnelType == "" {
+		tunnelType = "tcp"
+	}
 	m := &TunnelDefinitionModel{
 		AgentProfileID: tunnel.AgentProfileID,
 		Label:          tunnel.Label,
 		LocalAddr:      tunnel.LocalAddr,
+		TunnelType:     tunnelType,
 	}
 	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
 		return fmt.Errorf("failed to create tunnel definition: %w", err)
@@ -56,8 +61,9 @@ func (r *PGTunnelConfigRepository) ListByAgentProfileID(ctx context.Context, age
 func (r *PGTunnelConfigRepository) Update(ctx context.Context, tunnel *domain.TunnelConfig) error {
 	result := r.db.WithContext(ctx).Model(&TunnelDefinitionModel{}).Where("id = ?", tunnel.ID).
 		Updates(map[string]interface{}{
-			"label":      tunnel.Label,
-			"local_addr": tunnel.LocalAddr,
+			"label":       tunnel.Label,
+			"local_addr":  tunnel.LocalAddr,
+			"tunnel_type": tunnel.TunnelType,
 		})
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("tunnel definition %d not found", tunnel.ID)
@@ -79,6 +85,7 @@ func modelToTunnelDef(m *TunnelDefinitionModel) *domain.TunnelConfig {
 		AgentProfileID: m.AgentProfileID,
 		Label:          m.Label,
 		LocalAddr:      m.LocalAddr,
+		TunnelType:     m.TunnelType,
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,
 	}

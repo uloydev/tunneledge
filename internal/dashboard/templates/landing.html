@@ -209,7 +209,7 @@
       </div>
 
       <p class="max-w-xl mx-auto text-sm text-slate-500 mb-6 animate-fade-up" style="animation-delay:.12s">
-        All three phases shipped: Phase 1 stability &amp; hardening, Phase 2 multi-active HA with distributed routing, and Phase 3 enterprise security — mTLS, JWT revocation, token expiry, tunnel ACLs, rate limiting, quotas, and a full audit log.
+        All four phases shipped: Phase 1 stability &amp; hardening, Phase 2 multi-active HA with distributed routing, Phase 3 enterprise security — mTLS, JWT revocation, token expiry, tunnel ACLs, rate limiting, quotas, and a full audit log — and Phase 4 advanced networking — UDP tunnels, session resume, region-aware routing, and EWMA congestion scoring.
       </p>
 
       <!-- Headline -->
@@ -277,6 +277,8 @@
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Sub-100ms connection setup</div>
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> mTLS mutual authentication</div>
         <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Audit log &amp; IP ACLs</div>
+        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> UDP tunnel support</div>
+        <div class="flex items-center gap-2"><svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Session resume &amp; region routing</div>
       </div>
     </div>
   </section>
@@ -335,7 +337,7 @@
             <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/></svg>
           </div>
           <h3 class="text-base font-bold text-white mb-2">Self-Hosted First</h3>
-          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus, Grafana, OTLP tracing, Phase 2 multi-active HA (etcd coordinator, one env var), and Phase 3 enterprise security (mTLS, refresh tokens, tunnel ACLs, rate limiting, audit log) are all first-class runtime configuration.</p>
+          <p class="text-sm text-slate-400 leading-relaxed">Deploy on your own infra with Docker Compose in under 5 minutes. Prometheus, Grafana, OTLP tracing, Phase 2 multi-active HA (etcd coordinator, one env var), Phase 3 enterprise security (mTLS, refresh tokens, tunnel ACLs, rate limiting, audit log), and Phase 4 advanced networking (UDP tunnels, session resume, region routing) are all first-class runtime configuration.</p>
         </div>
 
         <!-- Feature 6 -->
@@ -354,6 +356,24 @@
           </div>
           <h3 class="text-base font-bold text-white mb-2">Enterprise Security</h3>
           <p class="text-sm text-slate-400 leading-relaxed">mTLS mutual auth, JWT revocation with refresh tokens, per-agent token expiry and account lockout, tunnel CIDR ACLs, per-IP rate limiting, and a queryable audit log for compliance.</p>
+        </div>
+
+        <!-- Feature 8 -->
+        <div class="feature-card glass rounded-2xl p-6 reveal" style="transition-delay:.36s">
+          <div class="w-11 h-11 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+          </div>
+          <h3 class="text-base font-bold text-white mb-2">UDP Tunnel Support</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">Expose UDP services — game servers, DNS, VoIP, real-time media — using QUIC's native datagram channel. Set <code class="text-brand-400 font-mono text-xs">tunnel_type: udp</code> per tunnel; no extra ports required.</p>
+        </div>
+
+        <!-- Feature 9 -->
+        <div class="feature-card glass rounded-2xl p-6 reveal" style="transition-delay:.44s">
+          <div class="w-11 h-11 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z"/></svg>
+          </div>
+          <h3 class="text-base font-bold text-white mb-2">Session Resume &amp; Region Routing</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">Reconnecting agents reclaim their public subdomain within a 30 s grace window — no DNS change. Declare a preferred region and the gateway returns the best relay addresses using EWMA congestion scoring.</p>
         </div>
 
       </div>
@@ -511,6 +531,24 @@
               <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
               <td class="px-6 py-3.5 text-center text-slate-500">paid</td>
               <td class="px-6 py-3.5 text-center text-slate-500">partial</td>
+            </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">UDP tunnel support</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">✗</td>
+              <td class="px-6 py-3.5 text-center text-slate-500">✗</td>
+            </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">Session resume</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">✗</td>
+              <td class="px-6 py-3.5 text-center text-slate-500">✗</td>
+            </tr>
+            <tr class="hover:bg-white/[.02] transition">
+              <td class="px-6 py-3.5 text-slate-300">Region-aware routing</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
+              <td class="px-6 py-3.5 text-center text-slate-500">paid</td>
+              <td class="px-6 py-3.5 text-center"><span class="text-emerald-400">✓</span></td>
             </tr>
           </tbody>
         </table>

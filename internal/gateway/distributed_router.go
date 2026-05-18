@@ -31,6 +31,7 @@ type DistributedRouter struct {
 	selfRelayID string
 	baseDomain  string
 	router      *TunnelRouter
+	scorer      *RelayScorer // Phase 4C: adaptive congestion scoring
 }
 
 func NewDistributedRouter(selfRelayID, baseDomain string, localRouter *TunnelRouter) *DistributedRouter {
@@ -40,7 +41,14 @@ func NewDistributedRouter(selfRelayID, baseDomain string, localRouter *TunnelRou
 		selfRelayID: selfRelayID,
 		baseDomain:  baseDomain,
 		router:      localRouter,
+		scorer:      NewRelayScorer(),
 	}
+}
+
+// BestRelaysForRegion delegates to the scorer to return the top-scoring relay
+// advertise addresses in a given region (Phase 4C: region-aware routing).
+func (d *DistributedRouter) BestRelaysForRegion(region string, n int) []string {
+	return d.scorer.BestRelaysForRegion(region, n)
 }
 
 // Lookup returns the remote route for a hostname, if it is owned by a peer
@@ -88,6 +96,11 @@ func (d *DistributedRouter) handleEvent(event domain.RegistryEvent) {
 			d.mu.Lock()
 			d.relays[event.Relay.RelayID] = event.Relay.AdvertiseAddr
 			d.mu.Unlock()
+			// Phase 4C: seed scorer with relay metadata so region is known early.
+			d.scorer.Update(event.Relay.RelayID, domain.RelayHealth{
+				AdvertiseAddr: event.Relay.AdvertiseAddr,
+				Region:        event.Relay.Region,
+			})
 		}
 
 	case domain.RegistryEventRelayHealthUpdated:
@@ -95,6 +108,16 @@ func (d *DistributedRouter) handleEvent(event domain.RegistryEvent) {
 			d.mu.Lock()
 			d.relays[event.Relay.RelayID] = event.Relay.AdvertiseAddr
 			d.mu.Unlock()
+		}
+		// Phase 4C: update EWMA score for the relay.
+		if event.Health != nil {
+			d.scorer.Update(event.Health.AdvertiseAddr, *event.Health)
+		} else if event.Relay != nil {
+			// Synthesise a minimal health snapshot from relay metadata.
+			d.scorer.Update(event.Relay.RelayID, domain.RelayHealth{
+				AdvertiseAddr: event.Relay.AdvertiseAddr,
+				Region:        event.Relay.Region,
+			})
 		}
 
 	case domain.RegistryEventTunnelUpserted:

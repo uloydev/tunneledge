@@ -11,8 +11,9 @@ import (
 )
 
 type TunnelConfig struct {
-	Label     string `mapstructure:"label" yaml:"label"`
-	LocalAddr string `mapstructure:"local_addr" yaml:"local_addr"`
+	Label      string `mapstructure:"label" yaml:"label"`
+	LocalAddr  string `mapstructure:"local_addr" yaml:"local_addr"`
+	TunnelType string `mapstructure:"tunnel_type" yaml:"tunnel_type"`
 }
 
 type AgentConfig struct {
@@ -33,6 +34,9 @@ type AgentConfig struct {
 	ClientKeyFile     string        `mapstructure:"client_key_file"`
 	APIURL            string        `mapstructure:"api_url"`
 	StreamIdleTimeout time.Duration `mapstructure:"stream_idle_timeout"`
+	// Phase 4: region routing and session resume.
+	PreferredRegion      string `mapstructure:"preferred_region"`
+	SessionResumeEnabled bool   `mapstructure:"session_resume_enabled"`
 }
 
 type GatewayConfig struct {
@@ -64,6 +68,11 @@ type GatewayConfig struct {
 	AuthRateLimitRPM    int   `mapstructure:"auth_rate_limit_rpm"`
 	MaxTunnelsPerAgent  int   `mapstructure:"max_tunnels_per_agent"`
 	MaxStreamsPerTunnel int64 `mapstructure:"max_streams_per_tunnel"`
+	// Phase 4: region, session resume, UDP.
+	Region               string        `mapstructure:"region"`
+	SessionResumeEnabled bool          `mapstructure:"session_resume_enabled"`
+	SessionResumeTTL     time.Duration `mapstructure:"session_resume_ttl"`
+	UDPListenAddr        string        `mapstructure:"udp_listen_addr"`
 }
 
 type RegistryConfig struct {

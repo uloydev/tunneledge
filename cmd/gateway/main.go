@@ -93,6 +93,11 @@ func main() {
 		AuthRateLimitRPM:    cfg.Gateway.AuthRateLimitRPM,
 		MaxTunnelsPerAgent:  cfg.Gateway.MaxTunnelsPerAgent,
 		MaxStreamsPerTunnel: cfg.Gateway.MaxStreamsPerTunnel,
+		// Phase 4: region routing, session resume, UDP
+		Region:               cfg.Gateway.Region,
+		SessionResumeEnabled: cfg.Gateway.SessionResumeEnabled,
+		SessionResumeTTL:     cfg.Gateway.SessionResumeTTL,
+		UDPListenAddr:        cfg.Gateway.UDPListenAddr,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create gateway")

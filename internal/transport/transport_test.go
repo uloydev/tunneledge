@@ -91,7 +91,7 @@ func TestEncodeDecodeAuthV2(t *testing.T) {
 		{Label: "api", LocalAddr: "localhost:8080"},
 	}
 
-	require.NoError(t, EncodeAuthV2(&buf, "test-token", tunnels))
+	require.NoError(t, EncodeAuthV2(&buf, &AuthV2Message{Token: "test-token", Tunnels: tunnels}))
 
 	msg, err := DecodeAuthV2(&buf)
 	require.NoError(t, err)
@@ -117,7 +117,11 @@ func TestEncodeDecodeAuthV2Response(t *testing.T) {
 		{Label: "api", Hostname: "api-agent-1.tunneledge.dev:443"},
 	}
 
-	require.NoError(t, EncodeAuthV2Response(&buf, AuthStatusOK, "t-agent-1", tunnels))
+	require.NoError(t, EncodeAuthV2Response(&buf, &AuthV2ResponseMessage{
+		Status:   AuthStatusOK,
+		TunnelID: "t-agent-1",
+		Tunnels:  tunnels,
+	}))
 
 	resp, err := DecodeAuthV2Response(&buf)
 	require.NoError(t, err)
@@ -133,7 +137,7 @@ func TestEncodeDecodeAuthV2Response(t *testing.T) {
 func TestEncodeDecodeAuthV2Response_Empty(t *testing.T) {
 	var buf bytes.Buffer
 
-	require.NoError(t, EncodeAuthV2Response(&buf, AuthStatusError, "", nil))
+	require.NoError(t, EncodeAuthV2Response(&buf, &AuthV2ResponseMessage{Status: AuthStatusError}))
 
 	resp, err := DecodeAuthV2Response(&buf)
 	require.NoError(t, err)
@@ -162,7 +166,7 @@ func TestDecodeStreamLabel_WrongType(t *testing.T) {
 func TestEncodeDecodeAuthV2_EmptyTunnels(t *testing.T) {
 	var buf bytes.Buffer
 
-	require.NoError(t, EncodeAuthV2(&buf, "test-token", nil))
+	require.NoError(t, EncodeAuthV2(&buf, &AuthV2Message{Token: "test-token"}))
 
 	msg, err := DecodeAuthV2(&buf)
 	require.NoError(t, err)

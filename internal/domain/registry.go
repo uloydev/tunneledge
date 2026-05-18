@@ -30,6 +30,7 @@ type RelayInfo struct {
 	ActiveTunnels int32
 	ActiveStreams int32
 	LastSeen      time.Time
+	Region        string // optional region tag (e.g. "us-east-1")
 }
 
 type Lease struct {
@@ -57,6 +58,7 @@ type RelayHealth struct {
 	CPUUtilizationPct      float64
 	MemoryUtilizationPct   float64
 	RecordedAt             time.Time
+	Region                 string // matches RelayInfo.Region
 }
 
 type RegistryEvent struct {

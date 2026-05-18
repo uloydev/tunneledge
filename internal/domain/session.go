@@ -14,6 +14,9 @@ type Session struct {
 	RemoteAddr    string
 	CreatedAt     time.Time
 	LastHeartbeat time.Time
+	// Session resume fields (Phase 4).
+	ResumeToken    string
+	ResumeDeadline *time.Time
 }
 
 func NewSession(tunnelID, agentID, localAddr string) *Session {

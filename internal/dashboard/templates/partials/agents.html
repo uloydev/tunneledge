@@ -161,6 +161,16 @@
             class="w-full rounded-lg bg-surface-900 border border-surface-700 px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition font-mono"
             placeholder="localhost:3000">
         </div>
+        <!-- Phase 4: tunnel type selector -->
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Protocol</label>
+          <select x-model="newTunnel.tunnel_type"
+            class="w-full rounded-lg bg-surface-900 border border-surface-700 px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition">
+            <option value="tcp">TCP (default)</option>
+            <option value="udp">UDP</option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1">Choose UDP for game servers, DNS, VoIP, or real-time media.</p>
+        </div>
         <div class="flex justify-end gap-3 pt-2">
           <button type="button" @click="showTunnel = false" class="px-4 py-2 text-sm text-slate-400 hover:text-white transition">Cancel</button>
           <button type="submit" :disabled="creatingTunnel" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition">
@@ -269,6 +279,10 @@
                   <div class="flex items-center gap-3 min-w-0">
                     <span class="inline-block w-2 h-2 rounded-full bg-brand-400 shrink-0"></span>
                     <span class="text-sm font-mono text-white truncate" x-text="t.label"></span>
+                    <!-- Phase 4: show UDP badge for UDP-type tunnels -->
+                    <template x-if="t.tunnel_type === 'udp'">
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/20 shrink-0">UDP</span>
+                    </template>
                     <svg class="w-4 h-4 text-slate-600 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
                     <span class="text-sm font-mono text-slate-400 truncate" x-text="t.local_addr"></span>
                   </div>
@@ -295,7 +309,7 @@ function agentsPage() {
     cachedTokens: {},
     showTunnel: false, creatingTunnel: false,
     tunnelAgent: null,
-    newTunnel: { label: '', local_addr: '' },
+    newTunnel: { label: '', local_addr: '', tunnel_type: 'tcp' },
     // ACL state
     showACL: false, aclAgent: null, aclRules: [],
     newACL: { cidr: '', acl_type: 'allow' }, addingACL: false,
@@ -393,7 +407,7 @@ function agentsPage() {
 
     showTunnelModal(agent) {
       this.tunnelAgent = agent;
-      this.newTunnel = { label: '', local_addr: '' };
+      this.newTunnel = { label: '', local_addr: '', tunnel_type: 'tcp' };
       this.showTunnel = true;
     },
 

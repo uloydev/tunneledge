@@ -95,6 +95,36 @@ func (g *Gateway) handleAgentConnection(ctx context.Context, conn *quic.Conn) {
 	var localAddr string
 
 	switch msgType {
+	case transport.MsgSessionResume:
+		// Phase 4B: agent is attempting to resume an existing session.
+		resumed, rErr := g.handleSessionResume(ctx, qstream, conn, logger)
+		if rErr != nil {
+			span.RecordError(rErr)
+			conn.CloseWithError(1, "resume failed")
+			return
+		}
+		if resumed {
+			// Session resumed — conn is now attached; skip auth + registration.
+			return
+		}
+		// Resume failed (expired/not found) — read the next frame for full auth.
+		nextType, nErr := transport.ReadMessageType(qstream)
+		if nErr != nil {
+			span.RecordError(nErr)
+			conn.CloseWithError(1, "auth failed after failed resume")
+			return
+		}
+		switch nextType {
+		case transport.MsgAuthV2:
+			agentID, tunnelID, publicAddr, localAddr, err = g.handleV2Auth(ctx, qstream, conn, logger)
+		case transport.MsgAuth:
+			r := io.MultiReader(bytes.NewReader([]byte{transport.MsgAuth}), qstream)
+			agentID, tunnelID, publicAddr, localAddr, err = g.handleV1Auth(ctx, r, qstream, conn, logger)
+		default:
+			logger.Error().Msgf("unexpected message type after failed resume: 0x%02x", nextType)
+			conn.CloseWithError(1, "unknown auth type")
+			return
+		}
 	case transport.MsgAuthV2:
 		agentID, tunnelID, publicAddr, localAddr, err = g.handleV2Auth(ctx, qstream, conn, logger)
 	case transport.MsgAuth:
@@ -210,7 +240,7 @@ func (g *Gateway) handleV2Auth(ctx context.Context, qstream *quic.Stream, conn *
 	if g.maxTunnelsPerAgent > 0 {
 		if count := g.countTunnelsByAgent(agentID); count >= g.maxTunnelsPerAgent {
 			logger.Warn().Str("agent_id", agentID).Int("count", count).Int("max", g.maxTunnelsPerAgent).Msg("tunnel quota exceeded")
-			_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
+			_ = transport.EncodeAuthV2Response(qstream, &transport.AuthV2ResponseMessage{Status: transport.AuthStatusError})
 			return "", "", "", "", fmt.Errorf("tunnel quota exceeded for agent %s", agentID)
 		}
 	}
@@ -221,17 +251,17 @@ func (g *Gateway) handleV2Auth(ctx context.Context, qstream *quic.Stream, conn *
 	for _, t := range authMsg.Tunnels {
 		if err := domain.ValidateLabel(t.Label); err != nil {
 			logger.Warn().Str("label", t.Label).Err(err).Msg("invalid tunnel label")
-			_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
+			_ = transport.EncodeAuthV2Response(qstream, &transport.AuthV2ResponseMessage{Status: transport.AuthStatusError})
 			return "", "", "", "", fmt.Errorf("invalid label %q: %w", t.Label, err)
 		}
-		routes = append(routes, domain.TunnelRoute{Label: t.Label, LocalAddr: t.LocalAddr})
+		routes = append(routes, domain.TunnelRoute{Label: t.Label, LocalAddr: t.LocalAddr, TunnelType: t.TunnelType})
 	}
 
 	tunnel := domain.NewActiveTunnel(agentID, routes)
 	lease, err := g.acquireTunnelLease(ctx, tunnel.ID.String())
 	if err != nil {
 		logger.Warn().Err(err).Str("tunnel_id", tunnel.ID.String()).Msg("failed to acquire tunnel lease")
-		_ = transport.EncodeAuthV2Response(qstream, transport.AuthStatusError, "", nil)
+		_ = transport.EncodeAuthV2Response(qstream, &transport.AuthV2ResponseMessage{Status: transport.AuthStatusError})
 		return "", "", "", "", err
 	}
 
@@ -251,7 +281,28 @@ func (g *Gateway) handleV2Auth(ctx context.Context, qstream *quic.Stream, conn *
 		}
 	}
 
-	if err := transport.EncodeAuthV2Response(qstream, transport.AuthStatusOK, tunnel.ID.String(), hostEntries); err != nil {
+	// Phase 4B: issue a resume token so the agent can reconnect without full auth.
+	var resumeToken string
+	if g.sessionResumeEnabled && g.sessionRepo != nil {
+		if tok, tokErr := generateResumeToken(); tokErr == nil {
+			resumeToken = tok
+		}
+	}
+
+	// Phase 4C: suggest best gateways for the agent's preferred region.
+	var suggestedGWs []string
+	if authMsg.PreferredRegion != "" {
+		suggestedGWs = g.distRouter.BestRelaysForRegion(authMsg.PreferredRegion, 2)
+	}
+
+	if err := transport.EncodeAuthV2Response(qstream, &transport.AuthV2ResponseMessage{
+		Status:            transport.AuthStatusOK,
+		TunnelID:          tunnel.ID.String(),
+		Tunnels:           hostEntries,
+		AssignedRegion:    g.region,
+		ResumeToken:       resumeToken,
+		SuggestedGateways: suggestedGWs,
+	}); err != nil {
 		logger.Error().Err(err).Msg("failed to send auth v2 response")
 		g.router.DeregisterAll(tunnel.ID.String())
 		_ = g.registryClient.ReleaseLease(context.Background(), lease.LeaseID)
@@ -259,6 +310,16 @@ func (g *Gateway) handleV2Auth(ctx context.Context, qstream *quic.Stream, conn *
 	}
 
 	g.addTunnel(tunnel, conn, lease.LeaseID)
+
+	// Store the resume token in the session repository so the agent can resume later.
+	if resumeToken != "" {
+		deadline := time.Now().Add(g.sessionResumeTTL)
+		storeCtx, storeCancel := context.WithTimeout(ctx, 5*time.Second)
+		if storeErr := g.sessionRepo.SetResumable(storeCtx, tunnel.ID.String(), resumeToken, deadline); storeErr != nil {
+			logger.Warn().Err(storeErr).Str("tunnel_id", tunnel.ID.String()).Msg("failed to store initial resume token")
+		}
+		storeCancel()
+	}
 
 	logger.Info().
 		Str("tunnel_id", tunnel.ID.String()).
@@ -286,8 +347,13 @@ func (g *Gateway) agentStreamLoop(ctx context.Context, conn *quic.Conn, tunnelID
 				g.removeTunnel(tunnelID, "context_canceled")
 				return
 			}
-			log.Error().Err(err).Str("tunnel_id", tunnelID).Msg("failed to accept stream")
-			g.removeTunnel(tunnelID, "stream_error")
+			// Agent's QUIC connection dropped — enter session resume grace window if enabled.
+			log.Error().Err(err).Str("tunnel_id", tunnelID).Msg("agent connection lost")
+			if g.sessionResumeEnabled && g.sessionRepo != nil {
+				g.suspendTunnel(tunnelID, "agent_disconnect")
+			} else {
+				g.removeTunnel(tunnelID, "stream_error")
+			}
 			return
 		}
 
@@ -317,6 +383,127 @@ func (g *Gateway) agentStreamLoop(ctx context.Context, conn *quic.Conn, tunnelID
 			s.Close()
 		}
 	}
+}
+
+// handleSessionResume processes a MsgSessionResume frame. It returns (true, nil)
+// when the session is successfully resumed — the caller should skip full auth and
+// continue directly to agentStreamLoop. It returns (false, nil) when the token is
+// invalid/expired so the caller can fall through to full auth. A non-nil error
+// indicates a protocol/IO failure and the connection should be closed.
+func (g *Gateway) handleSessionResume(ctx context.Context, qstream *quic.Stream, conn *quic.Conn, logger zerolog.Logger) (bool, error) {
+	resumeMsg, err := transport.DecodeSessionResume(
+		io.MultiReader(bytes.NewReader([]byte{transport.MsgSessionResume}), qstream),
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode session resume: %w", err)
+	}
+
+	if g.sessionRepo == nil {
+		// Resume not supported on this gateway.
+		if err := transport.EncodeSessionResumeResp(qstream, &transport.SessionResumeRespMessage{
+			Status: transport.ResumeStatusNotFound,
+		}); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 5*time.Second)
+	sess, lookupErr := g.sessionRepo.GetResumable(lookupCtx, resumeMsg.Token)
+	lookupCancel()
+
+	if lookupErr != nil {
+		logger.Warn().Str("token_prefix", safePrefix(resumeMsg.Token, 8)).Msg("session resume token not found or expired")
+		if encErr := transport.EncodeSessionResumeResp(qstream, &transport.SessionResumeRespMessage{
+			Status: transport.ResumeStatusExpired,
+		}); encErr != nil {
+			return false, encErr
+		}
+		return false, nil
+	}
+
+	tunnelID := sess.TunnelID
+
+	// Cancel the finalization timer — the agent has reconnected in time.
+	g.resumeMu.Lock()
+	if t, ok := g.pendingResumeTimers[tunnelID]; ok {
+		t.Stop()
+		delete(g.pendingResumeTimers, tunnelID)
+	}
+	g.resumeMu.Unlock()
+
+	// Issue a new resume token for the next reconnect.
+	newToken, genErr := generateResumeToken()
+	if genErr != nil {
+		newToken = "" // non-fatal; agent will fall back to full auth next time
+	}
+
+	// Re-attach the new QUIC connection to the existing tunnel entry.
+	g.mu.Lock()
+	at, ok := g.tunnels[tunnelID]
+	if !ok {
+		g.mu.Unlock()
+		// Tunnel was fully removed while we were processing — treat as not found.
+		if encErr := transport.EncodeSessionResumeResp(qstream, &transport.SessionResumeRespMessage{
+			Status: transport.ResumeStatusNotFound,
+		}); encErr != nil {
+			return false, encErr
+		}
+		return false, nil
+	}
+	at.conn = conn
+	at.suspended = false
+	g.mu.Unlock()
+
+	// Update the resume token in the repository.
+	if newToken != "" {
+		deadline := time.Now().Add(g.sessionResumeTTL)
+		storeCtx, storeCancel := context.WithTimeout(ctx, 5*time.Second)
+		if storeErr := g.sessionRepo.SetResumable(storeCtx, tunnelID, newToken, deadline); storeErr != nil {
+			logger.Warn().Err(storeErr).Str("tunnel_id", tunnelID).Msg("failed to update resume token after resume")
+			newToken = "" // don't send an invalid token to the agent
+		}
+		storeCancel()
+	}
+
+	if err := transport.EncodeSessionResumeResp(qstream, &transport.SessionResumeRespMessage{
+		Status:   transport.ResumeStatusResumed,
+		TunnelID: tunnelID,
+		NewToken: newToken,
+	}); err != nil {
+		return false, fmt.Errorf("failed to send resume response: %w", err)
+	}
+
+	logger.Info().
+		Str("tunnel_id", tunnelID).
+		Str("agent_id", sess.AgentID).
+		Msg("session resumed")
+
+	// Continue the tunnel lifecycle with the new connection.
+	tunnelCtx, tunnelCancel := context.WithCancel(ctx)
+	defer tunnelCancel()
+
+	group, groupCtx := errgroup.WithContext(tunnelCtx)
+	group.Go(func() error {
+		g.heartbeatLoop(groupCtx, tunnelID)
+		return nil
+	})
+	group.Go(func() error {
+		defer tunnelCancel()
+		g.agentStreamLoop(groupCtx, conn, tunnelID)
+		return nil
+	})
+	_ = group.Wait()
+
+	return true, nil
+}
+
+// safePrefix returns up to n characters of s, or all of s if shorter.
+func safePrefix(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 // countTunnelsByAgent returns the number of active tunnels associated with agentID.

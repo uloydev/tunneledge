@@ -126,4 +126,52 @@ func (r *PGSessionRepository) CleanupExpired(ctx context.Context, ttl time.Durat
 	return int(result.RowsAffected), result.Error
 }
 
+// GetResumable looks up an active or disconnecting session by its resume token,
+// returning it only if the resume deadline has not yet passed.
+func (r *PGSessionRepository) GetResumable(ctx context.Context, token string) (*domain.Session, error) {
+	if token == "" {
+		return nil, fmt.Errorf("resume token required")
+	}
+	var m TunnelSessionModel
+	err := r.db.WithContext(ctx).
+		Where("resume_token = ? AND resume_deadline > ? AND status IN ?", token, time.Now(), []string{"active", "disconnecting"}).
+		First(&m).Error
+	if err != nil {
+		return nil, fmt.Errorf("resumable session not found: %w", err)
+	}
+	return &domain.Session{
+		TunnelID:       m.TunnelID,
+		AgentID:        m.AgentID,
+		OwnerRelayID:   m.OwnerRelayID,
+		LeaseID:        m.LeaseID,
+		PublicAddr:     m.PublicHost,
+		LocalAddr:      m.LocalAddr,
+		RemoteAddr:     m.RemoteAddr,
+		CreatedAt:      m.ConnectedAt,
+		LastHeartbeat:  m.LastHeartbeat,
+		ResumeToken:    m.ResumeToken,
+		ResumeDeadline: m.ResumeDeadline,
+	}, nil
+}
+
+// SetResumable stores a resume token and deadline against the given session,
+// and transitions the session to "disconnecting" status so cleanup skips it
+// until the deadline passes.
+func (r *PGSessionRepository) SetResumable(ctx context.Context, tunnelID, token string, deadline time.Time) error {
+	result := r.db.WithContext(ctx).Model(&TunnelSessionModel{}).
+		Where("tunnel_id = ? AND status = ?", tunnelID, "active").
+		Updates(map[string]interface{}{
+			"status":          "disconnecting",
+			"resume_token":    token,
+			"resume_deadline": deadline,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("session %s not found or not active", tunnelID)
+	}
+	return nil
+}
+
 var _ domain.SessionRepository = (*PGSessionRepository)(nil)

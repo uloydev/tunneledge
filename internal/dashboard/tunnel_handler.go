@@ -34,18 +34,19 @@ func (h *TunnelHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tunnel, err := h.svc.Create(r.Context(), userID, agentID, req.Label, req.LocalAddr)
+	tunnel, err := h.svc.Create(r.Context(), userID, agentID, req.Label, req.LocalAddr, req.TunnelType)
 	if err != nil {
 		writeServiceError(r, w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, TunnelResponse{
-		ID:        tunnel.ID,
-		Label:     tunnel.Label,
-		LocalAddr: tunnel.LocalAddr,
-		CreatedAt: tunnel.CreatedAt,
-		UpdatedAt: tunnel.UpdatedAt,
+		ID:         tunnel.ID,
+		Label:      tunnel.Label,
+		LocalAddr:  tunnel.LocalAddr,
+		TunnelType: tunnel.TunnelType,
+		CreatedAt:  tunnel.CreatedAt,
+		UpdatedAt:  tunnel.UpdatedAt,
 	})
 }
 
@@ -71,11 +72,12 @@ func (h *TunnelHandler) List(w http.ResponseWriter, r *http.Request) {
 	resp := make([]TunnelResponse, 0, len(tunnels))
 	for _, t := range tunnels {
 		resp = append(resp, TunnelResponse{
-			ID:        t.ID,
-			Label:     t.Label,
-			LocalAddr: t.LocalAddr,
-			CreatedAt: t.CreatedAt,
-			UpdatedAt: t.UpdatedAt,
+			ID:         t.ID,
+			Label:      t.Label,
+			LocalAddr:  t.LocalAddr,
+			TunnelType: t.TunnelType,
+			CreatedAt:  t.CreatedAt,
+			UpdatedAt:  t.UpdatedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -101,11 +103,12 @@ func (h *TunnelHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, TunnelResponse{
-		ID:        tunnel.ID,
-		Label:     tunnel.Label,
-		LocalAddr: tunnel.LocalAddr,
-		CreatedAt: tunnel.CreatedAt,
-		UpdatedAt: tunnel.UpdatedAt,
+		ID:         tunnel.ID,
+		Label:      tunnel.Label,
+		LocalAddr:  tunnel.LocalAddr,
+		TunnelType: tunnel.TunnelType,
+		CreatedAt:  tunnel.CreatedAt,
+		UpdatedAt:  tunnel.UpdatedAt,
 	})
 }
 
@@ -128,18 +131,19 @@ func (h *TunnelHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tunnel, err := h.svc.Update(r.Context(), userID, agentID, tunnelID, req.Label, req.LocalAddr)
+	tunnel, err := h.svc.Update(r.Context(), userID, agentID, tunnelID, req.Label, req.LocalAddr, req.TunnelType)
 	if err != nil {
 		writeServiceError(r, w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, TunnelResponse{
-		ID:        tunnel.ID,
-		Label:     tunnel.Label,
-		LocalAddr: tunnel.LocalAddr,
-		CreatedAt: tunnel.CreatedAt,
-		UpdatedAt: tunnel.UpdatedAt,
+		ID:         tunnel.ID,
+		Label:      tunnel.Label,
+		LocalAddr:  tunnel.LocalAddr,
+		TunnelType: tunnel.TunnelType,
+		CreatedAt:  tunnel.CreatedAt,
+		UpdatedAt:  tunnel.UpdatedAt,
 	})
 }
 

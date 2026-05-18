@@ -209,6 +209,9 @@ func runTUI() error {
 			ClientCertFile:    cfg.Agent.ClientCertFile,
 			ClientKeyFile:     cfg.Agent.ClientKeyFile,
 			EventCh:           uiEvents,
+			// Phase 4: region routing and session resume
+			PreferredRegion:      cfg.Agent.PreferredRegion,
+			SessionResumeEnabled: cfg.Agent.SessionResumeEnabled,
 		})
 		if err := a.Run(gctx); err != nil && gctx.Err() == nil {
 			log.Error().Err(err).Msg("agent stopped with error")
@@ -308,6 +311,9 @@ func runHeadless(cmd *cobra.Command, args []string) error {
 		ClientCertFile:    cfg.Agent.ClientCertFile,
 		ClientKeyFile:     cfg.Agent.ClientKeyFile,
 		Metrics:           m,
+		// Phase 4: region routing and session resume
+		PreferredRegion:      cfg.Agent.PreferredRegion,
+		SessionResumeEnabled: cfg.Agent.SessionResumeEnabled,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
